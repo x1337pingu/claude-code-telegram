@@ -37,8 +37,8 @@ def deps():
     }
 
 
-def test_agentic_registers_3_commands(agentic_settings, deps):
-    """Agentic mode registers only start, new, status commands."""
+def test_agentic_registers_commands(agentic_settings, deps):
+    """Agentic mode registers start, new, status + model override commands."""
     orchestrator = MessageOrchestrator(agentic_settings, deps)
     app = MagicMock()
     app.add_handler = MagicMock()
@@ -55,10 +55,13 @@ def test_agentic_registers_3_commands(agentic_settings, deps):
     ]
     commands = [h[0][0].commands for h in cmd_handlers]
 
-    assert len(cmd_handlers) == 3
+    assert len(cmd_handlers) == 6  # start, new, status + opus, sonnet, haiku
     assert frozenset({"start"}) in commands
     assert frozenset({"new"}) in commands
     assert frozenset({"status"}) in commands
+    assert frozenset({"opus"}) in commands
+    assert frozenset({"sonnet"}) in commands
+    assert frozenset({"haiku"}) in commands
 
 
 def test_classic_registers_13_commands(classic_settings, deps):
@@ -103,18 +106,23 @@ def test_agentic_registers_text_document_photo_handlers(agentic_settings, deps):
 
     # 3 message handlers (text, document, photo)
     assert len(msg_handlers) == 3
-    # 1 callback handler (for cd: only)
-    assert len(cb_handlers) == 1
+    # 2 callback handlers (cd: and clarify:)
+    assert len(cb_handlers) == 2
 
 
 async def test_agentic_bot_commands(agentic_settings, deps):
-    """Agentic mode returns 3 bot commands."""
+    """Agentic mode returns bot commands including model overrides."""
     orchestrator = MessageOrchestrator(agentic_settings, deps)
     commands = await orchestrator.get_bot_commands()
 
-    assert len(commands) == 3
+    assert len(commands) == 6
     cmd_names = [c.command for c in commands]
-    assert cmd_names == ["start", "new", "status"]
+    assert "start" in cmd_names
+    assert "new" in cmd_names
+    assert "status" in cmd_names
+    assert "opus" in cmd_names
+    assert "sonnet" in cmd_names
+    assert "haiku" in cmd_names
 
 
 async def test_classic_bot_commands(classic_settings, deps):
@@ -169,7 +177,7 @@ async def test_agentic_new_resets_session(agentic_settings, deps):
     await orchestrator.agentic_new(update, context)
 
     assert context.user_data["claude_session_id"] is None
-    update.message.reply_text.assert_called_once_with("Session reset. What's next?")
+    update.message.reply_text.assert_called_once()  # Message is randomized French
 
 
 async def test_agentic_status_compact(agentic_settings, deps):
@@ -208,13 +216,13 @@ async def test_agentic_text_calls_claude(agentic_settings, deps):
     update.effective_user.id = 123
     update.message.text = "Help me with this code"
     update.message.message_id = 1
+    update.message.chat_id = 456
     update.message.chat.send_action = AsyncMock()
     update.message.reply_text = AsyncMock()
 
-    # Progress message mock
+    # Progress message mock (returned by context.bot.send_message)
     progress_msg = AsyncMock()
     progress_msg.delete = AsyncMock()
-    update.message.reply_text.return_value = progress_msg
 
     context = MagicMock()
     context.user_data = {}
@@ -225,6 +233,8 @@ async def test_agentic_text_calls_claude(agentic_settings, deps):
         "rate_limiter": None,
         "audit_logger": None,
     }
+    context.bot.send_chat_action = AsyncMock()
+    context.bot.send_message = AsyncMock(return_value=progress_msg)
 
     await orchestrator.agentic_text(update, context)
 
@@ -240,15 +250,15 @@ async def test_agentic_text_calls_claude(agentic_settings, deps):
     # Response sent without keyboard (reply_markup=None)
     response_calls = [
         c
-        for c in update.message.reply_text.call_args_list
-        if c != update.message.reply_text.call_args_list[0]
+        for c in context.bot.send_message.call_args_list
+        if c != context.bot.send_message.call_args_list[0]
     ]
     for call in response_calls:
         assert call.kwargs.get("reply_markup") is None
 
 
-async def test_agentic_callback_scoped_to_cd_pattern(agentic_settings, deps):
-    """Agentic callback handler is registered with cd: pattern filter."""
+async def test_agentic_callback_scoped_to_patterns(agentic_settings, deps):
+    """Agentic callback handlers are registered with cd: and clarify: patterns."""
     orchestrator = MessageOrchestrator(agentic_settings, deps)
     app = MagicMock()
     app.add_handler = MagicMock()
@@ -263,10 +273,12 @@ async def test_agentic_callback_scoped_to_cd_pattern(agentic_settings, deps):
         if isinstance(call[0][0], CallbackQueryHandler)
     ]
 
-    assert len(cb_handlers) == 1
-    # The pattern attribute should match cd: prefixed data
-    assert cb_handlers[0].pattern is not None
-    assert cb_handlers[0].pattern.match("cd:my_project")
+    assert len(cb_handlers) == 2
+    patterns = [h.pattern for h in cb_handlers]
+    # cd: handler
+    assert any(p is not None and p.match("cd:my_project") for p in patterns)
+    # clarify: handler
+    assert any(p is not None and p.match("clarify:claude-opus-4-6") for p in patterns)
 
 
 async def test_agentic_document_rejects_large_files(agentic_settings, deps):
@@ -309,6 +321,29 @@ async def test_agentic_start_escapes_html_in_name(agentic_settings, deps):
     assert call_kwargs.kwargs.get("parse_mode") == "HTML"
 
 
+async def test_should_ask_clarification_when_scores_close(agentic_settings, deps):
+    """Clarification is triggered when top two scores are within threshold."""
+    from src.bot.router import RouteResult
+
+    orchestrator = MessageOrchestrator(agentic_settings, deps)
+
+    # Close scores → should ask
+    route = RouteResult("model", "test", scores={"opus": 4, "sonnet": 3, "haiku": 0})
+    assert orchestrator._should_ask_clarification(route) is True
+
+    # Clear winner → should NOT ask
+    route2 = RouteResult("model", "test", scores={"opus": 6, "sonnet": 2, "haiku": 0})
+    assert orchestrator._should_ask_clarification(route2) is False
+
+    # One is zero → should NOT ask
+    route3 = RouteResult("model", "test", scores={"opus": 3, "sonnet": 0, "haiku": 0})
+    assert orchestrator._should_ask_clarification(route3) is False
+
+    # Empty scores → should NOT ask
+    route4 = RouteResult("model", "test", scores={})
+    assert orchestrator._should_ask_clarification(route4) is False
+
+
 async def test_agentic_text_logs_failure_on_error(agentic_settings, deps):
     """Failed Claude runs are logged with success=False."""
     orchestrator = MessageOrchestrator(agentic_settings, deps)
@@ -323,12 +358,12 @@ async def test_agentic_text_logs_failure_on_error(agentic_settings, deps):
     update.effective_user.id = 123
     update.message.text = "do something"
     update.message.message_id = 1
+    update.message.chat_id = 456
     update.message.chat.send_action = AsyncMock()
     update.message.reply_text = AsyncMock()
 
     progress_msg = AsyncMock()
     progress_msg.delete = AsyncMock()
-    update.message.reply_text.return_value = progress_msg
 
     context = MagicMock()
     context.user_data = {}
@@ -339,6 +374,8 @@ async def test_agentic_text_logs_failure_on_error(agentic_settings, deps):
         "rate_limiter": None,
         "audit_logger": audit_logger,
     }
+    context.bot.send_chat_action = AsyncMock()
+    context.bot.send_message = AsyncMock(return_value=progress_msg)
 
     await orchestrator.agentic_text(update, context)
 
