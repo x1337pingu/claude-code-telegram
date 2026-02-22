@@ -58,7 +58,10 @@ class Settings(BaseSettings):
     )
     anthropic_api_key: Optional[SecretStr] = Field(
         None,
-        description="Anthropic API key for Claude SDK (optional if logged into Claude CLI)",
+        description=(
+            "Anthropic API key for Claude SDK "
+            "(optional if logged into Claude CLI)"
+        ),
     )
     claude_model: str = Field(
         "claude-3-5-sonnet-20241022", description="Claude model to use"
@@ -232,7 +235,9 @@ class Settings(BaseSettings):
         if "mcpServers" not in config_data:
             raise ValueError(
                 "MCP config file must contain a 'mcpServers' key. "
-                'Expected format: {"mcpServers": {"server-name": {"command": "...", ...}}}'
+                "Expected format: "
+                '{"mcpServers": {"server-name": '
+                '{"command": "...", ...}}}'
             )
         if not isinstance(config_data["mcpServers"], dict):
             raise ValueError(

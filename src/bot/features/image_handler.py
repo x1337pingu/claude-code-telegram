@@ -95,7 +95,8 @@ class ImageHandler:
 
     def _create_screenshot_prompt(self, caption: Optional[str]) -> str:
         """Create prompt for screenshot analysis"""
-        base_prompt = """I'm sharing a screenshot with you. Please analyze it and help me with:
+        base_prompt = """\
+I'm sharing a screenshot with you. Please analyze it and help me with:
 
 1. Identifying what application or website this is from
 2. Understanding the UI elements and their purpose
@@ -141,7 +142,9 @@ class ImageHandler:
 
     def _create_generic_prompt(self, caption: Optional[str]) -> str:
         """Create generic image analysis prompt"""
-        base_prompt = """I'm sharing an image with you. Please analyze it and provide relevant insights.
+        base_prompt = """\
+I'm sharing an image with you. \
+Please analyze it and provide relevant insights.
 
 """
         if caption:

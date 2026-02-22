@@ -4,7 +4,6 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional
 
 from src.storage.facade import Storage
 from src.utils.constants import MAX_SESSION_LENGTH
@@ -112,7 +111,7 @@ class SessionExporter:
         lines = []
 
         # Header
-        lines.append(f"# Claude Code Session Export")
+        lines.append("# Claude Code Session Export")
         lines.append(f"\n**Session ID:** `{session['id']}`")
         lines.append(f"**Created:** {session['created_at']}")
         if session.get("updated_at"):
@@ -190,7 +189,8 @@ class SessionExporter:
     <title>Claude Code Session - {session['id'][:8]}</title>
     <style>
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont,
+                'Segoe UI', Roboto, sans-serif;
             line-height: 1.6;
             color: #333;
             max-width: 800px;

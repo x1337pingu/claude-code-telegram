@@ -28,7 +28,12 @@ async def _format_progress_update(update_obj) -> Optional[str]:
             tool_name = update_obj.metadata.get("tool_name", "Tool")
 
         if update_obj.is_error():
-            return f"❌ <b>{tool_name} failed</b>\n\n<i>{update_obj.get_error_message()}</i>"
+            return (
+                f"❌ <b>{tool_name} failed</b>"
+                f"\n\n<i>"
+                f"{update_obj.get_error_message()}"
+                f"</i>"
+            )
         else:
             execution_time = ""
             if update_obj.metadata and update_obj.metadata.get("execution_time_ms"):
@@ -357,7 +362,7 @@ async def handle_text_message(
         # Clean up progress message if it exists
         try:
             await progress_msg.delete()
-        except:
+        except Exception:
             pass
 
         error_msg = f"❌ <b>Error processing message</b>\n\n{escape_html(str(e))}"
@@ -460,7 +465,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
                 # Update progress message with file type info
                 await progress_msg.edit_text(
-                    f"📄 Processing {processed_file.type} file: <code>{document.file_name}</code>...",
+                    f"📄 Processing {processed_file.type}"
+                    f" file: <code>"
+                    f"{document.file_name}</code>...",
                     parse_mode="HTML",
                 )
 
@@ -490,7 +497,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
                 # Create prompt with file content
                 caption = update.message.caption or "Please review this file:"
-                prompt = f"{caption}\n\n**File:** `{document.file_name}`\n\n```\n{content}\n```"
+                prompt = (
+                    f"{caption}\n\n"
+                    f"**File:** `{document.file_name}`"
+                    f"\n\n```\n{content}\n```"
+                )
 
             except UnicodeDecodeError:
                 await progress_msg.edit_text(
@@ -589,7 +600,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         try:
             await progress_msg.delete()
-        except:
+        except Exception:
             pass
 
         error_msg = f"❌ <b>Error processing file</b>\n\n{escape_html(str(e))}"
@@ -782,24 +793,35 @@ async def _generate_placeholder_response(
     message_lower = message_text.lower()
 
     if any(
-        word in message_lower for word in ["list", "show", "see", "directory", "files"]
+        word in message_lower
+        for word in ["list", "show", "see", "directory", "files"]
     ):
         response_text = (
-            f"🤖 <b>Claude Code Response</b> <i>(Placeholder)</i>\n\n"
-            f"I understand you want to see files. Try using the /ls command to list files "
-            f"in your current directory (<code>{relative_path}/</code>).\n\n"
+            f"🤖 <b>Claude Code Response</b>"
+            f" <i>(Placeholder)</i>\n\n"
+            f"I understand you want to see files. "
+            f"Try using the /ls command to list files "
+            f"in your current directory "
+            f"(<code>{relative_path}/</code>).\n\n"
             f"<b>Available commands:</b>\n"
             f"• /ls - List files\n"
             f"• /cd &lt;dir&gt; - Change directory\n"
             f"• /projects - Show projects\n\n"
-            f"<i>Note: Full Claude Code integration will be available in the next phase.</i>"
+            f"<i>Note: Full Claude Code integration "
+            f"will be available in the next phase.</i>"
         )
 
-    elif any(word in message_lower for word in ["create", "generate", "make", "build"]):
+    elif any(
+        word in message_lower
+        for word in ["create", "generate", "make", "build"]
+    ):
         response_text = (
-            f"🤖 <b>Claude Code Response</b> <i>(Placeholder)</i>\n\n"
-            f"I understand you want to create something! Once the Claude Code integration "
-            f"is complete, I'll be able to:\n\n"
+            f"🤖 <b>Claude Code Response</b>"
+            f" <i>(Placeholder)</i>\n\n"
+            f"I understand you want to create "
+            f"something! Once the Claude Code "
+            f"integration is complete, I'll be "
+            f"able to:\n\n"
             f"• Generate code files\n"
             f"• Create project structures\n"
             f"• Write documentation\n"
@@ -810,23 +832,27 @@ async def _generate_placeholder_response(
 
     elif any(word in message_lower for word in ["help", "how", "what", "explain"]):
         response_text = (
-            f"🤖 <b>Claude Code Response</b> <i>(Placeholder)</i>\n\n"
-            f"I'm here to help! Try using /help for available commands.\n\n"
-            f"<b>What I can do now:</b>\n"
-            f"• Navigate directories (/cd, /ls, /pwd)\n"
-            f"• Show projects (/projects)\n"
-            f"• Manage sessions (/new, /status)\n\n"
-            f"<b>Coming soon:</b>\n"
-            f"• Full Claude Code integration\n"
-            f"• Code generation and editing\n"
-            f"• File operations\n"
-            f"• Advanced programming assistance"
+            "🤖 <b>Claude Code Response</b> <i>(Placeholder)</i>\n\n"
+            "I'm here to help! Try using /help for available commands.\n\n"
+            "<b>What I can do now:</b>\n"
+            "• Navigate directories (/cd, /ls, /pwd)\n"
+            "• Show projects (/projects)\n"
+            "• Manage sessions (/new, /status)\n\n"
+            "<b>Coming soon:</b>\n"
+            "• Full Claude Code integration\n"
+            "• Code generation and editing\n"
+            "• File operations\n"
+            "• Advanced programming assistance"
         )
 
     else:
         response_text = (
-            f"🤖 <b>Claude Code Response</b> <i>(Placeholder)</i>\n\n"
-            f"I received your message: \"{message_text[:100]}{'...' if len(message_text) > 100 else ''}\"\n\n"
+            f"🤖 <b>Claude Code Response</b>"
+            f" <i>(Placeholder)</i>\n\n"
+            f"I received your message: \""
+            f"{message_text[:100]}"
+            f"{'...' if len(message_text) > 100 else ''}"
+            f"\"\n\n"
             f"<b>Current Status:</b>\n"
             f"• Directory: <code>{relative_path}/</code>\n"
             f"• Bot core: ✅ Active\n"

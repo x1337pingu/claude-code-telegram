@@ -4,7 +4,7 @@ Provides simple interface for bot handlers.
 """
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import structlog
 
@@ -13,7 +13,7 @@ from .exceptions import ClaudeToolValidationError
 from .integration import ClaudeProcessManager, ClaudeResponse, StreamUpdate
 from .monitor import ToolMonitor
 from .sdk_integration import ClaudeSDKManager
-from .session import SessionManager
+from .session import ClaudeSession, SessionManager
 
 logger = structlog.get_logger()
 
@@ -219,11 +219,20 @@ class ClaudeIntegration:
                         f"Claude tried to use tools not allowed:\n"
                         f"{tool_list}\n\n"
                         f"**What you can do:**\n"
-                        f"• Contact the administrator to request access to these tools\n"
-                        f"• Try rephrasing your request to use different approaches\n"
-                        f"• Check what tools are currently available with `/status`\n\n"
+                        f"• Contact the administrator to "
+                        f"request access to these tools\n"
+                        f"• Try rephrasing your request "
+                        f"to use different approaches\n"
+                        f"• Check what tools are currently"
+                        f" available with `/status`\n\n"
                         f"**Currently allowed tools:**\n"
-                        f"{', '.join(f'`{t}`' for t in self.config.claude_allowed_tools or [])}"
+                        + ", ".join(
+                            f"`{t}`"
+                            for t in (
+                                self.config.claude_allowed_tools
+                                or []
+                            )
+                        )
                     )
                 else:
                     response.content = (
@@ -304,7 +313,8 @@ class ClaudeIntegration:
                 ):
                     self._sdk_failed_count += 1
                     logger.warning(
-                        "Claude SDK failed with JSON/TaskGroup error, falling back to subprocess",
+                        "Claude SDK failed with JSON/TaskGroup error, "
+                        "falling back to subprocess",
                         error=error_str,
                         failure_count=self._sdk_failed_count,
                         error_type=type(e).__name__,
@@ -332,7 +342,8 @@ class ClaudeIntegration:
                             sdk_error=error_str,
                             subprocess_error=str(fallback_error),
                         )
-                        # Re-raise the original SDK error since it was the primary method
+                        # Re-raise the original SDK error
+                        # since it was the primary method
                         raise e
                 else:
                     # For non-JSON errors, re-raise immediately
@@ -356,14 +367,12 @@ class ClaudeIntegration:
         self,
         user_id: int,
         working_directory: Path,
-    ) -> Optional["ClaudeSession"]:
+    ) -> Optional[ClaudeSession]:
         """Find the most recent resumable session for a user in a directory.
 
         Returns the session if one exists that is non-expired and has a real
         (non-temporary) session ID from Claude. Returns None otherwise.
         """
-        from .session import ClaudeSession
-
         sessions = await self.session_manager._get_user_sessions(user_id)
 
         matching_sessions = [
@@ -552,7 +561,7 @@ class ClaudeIntegration:
         message = [
             "🚫 **Tool Access Blocked**",
             "",
-            f"Claude tried to use tools that are not currently allowed:",
+            "Claude tried to use tools that are not currently allowed:",
             f"{tool_list}",
             "",
             "**Why this happened:**",

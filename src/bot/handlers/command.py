@@ -83,8 +83,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "• <code>/git</code> - Git repository information\n\n"
         "<b>Session Behavior:</b>\n"
         "• Sessions are automatically maintained per project directory\n"
-        "• Switching directories with <code>/cd</code> resumes the session for that project\n"
-        "• Use <code>/new</code> or <code>/end</code> to explicitly clear session context\n"
+        "• Switching directories with <code>/cd</code> "
+        "resumes the session for that project\n"
+        "• Use <code>/new</code> or <code>/end</code>"
+        " to explicitly clear session context\n"
         "• Sessions persist across bot restarts\n\n"
         "<b>Usage Examples:</b>\n"
         "• <code>cd myproject</code> - Enter project directory\n"
@@ -112,7 +114,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /new command - explicitly starts a fresh session, clearing previous context."""
+    """Handle /new command - start fresh session, clear context."""
     settings: Settings = context.bot_data["settings"]
 
     # Get current directory (default to approved directory)
@@ -194,8 +196,15 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             status_msg = await update.message.reply_text(
                 f"🔄 <b>Continuing Session</b>\n\n"
                 f"Session ID: <code>{claude_session_id[:8]}...</code>\n"
-                f"Directory: <code>{current_dir.relative_to(settings.approved_directory)}/</code>\n\n"
-                f"{'Processing your message...' if prompt else 'Continuing where you left off...'}",
+                f"Directory: <code>"
+                f"{current_dir.relative_to(settings.approved_directory)}"
+                f"/</code>\n\n"
+                + (
+                    "Processing your message..."
+                    if prompt
+                    else "Continuing where you "
+                    "left off..."
+                ),
                 parse_mode="HTML",
             )
 
@@ -257,12 +266,18 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             # No session found to continue
             await status_msg.edit_text(
                 "❌ <b>No Session Found</b>\n\n"
-                f"No recent Claude session found in this directory.\n"
-                f"Directory: <code>{current_dir.relative_to(settings.approved_directory)}/</code>\n\n"
+                f"No recent Claude session found "
+                f"in this directory.\n"
+                f"Directory: <code>"
+                f"{current_dir.relative_to(settings.approved_directory)}"
+                f"/</code>\n\n"
                 f"<b>What you can do:</b>\n"
-                f"• Use <code>/new</code> to start a fresh session\n"
-                f"• Use <code>/status</code> to check your sessions\n"
-                f"• Navigate to a different directory with <code>/cd</code>",
+                f"• Use <code>/new</code> to start "
+                f"a fresh session\n"
+                f"• Use <code>/status</code> to check "
+                f"your sessions\n"
+                f"• Navigate to a different directory "
+                f"with <code>/cd</code>",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(
                     [
@@ -467,13 +482,16 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         # Check if directory exists and is actually a directory
         if not resolved_path.exists():
             await update.message.reply_text(
-                f"❌ <b>Directory Not Found</b>\n\n<code>{target_path}</code> does not exist."
+                f"❌ <b>Directory Not Found</b>\n\n"
+                f"<code>{target_path}</code> does not exist."
             )
             return
 
         if not resolved_path.is_dir():
             await update.message.reply_text(
-                f"❌ <b>Not a Directory</b>\n\n<code>{target_path}</code> is not a directory."
+                f"❌ <b>Not a Directory</b>\n\n"
+                f"<code>{target_path}</code> "
+                f"is not a directory."
             )
             return
 
@@ -492,8 +510,12 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             if existing_session:
                 context.user_data["claude_session_id"] = existing_session.session_id
                 resumed_session_info = (
-                    f"\n🔄 Resumed session <code>{existing_session.session_id[:8]}...</code> "
-                    f"({existing_session.message_count} messages)"
+                    f"\n🔄 Resumed session "
+                    f"<code>"
+                    f"{existing_session.session_id[:8]}"
+                    f"...</code> "
+                    f"({existing_session.message_count}"
+                    f" messages)"
                 )
             else:
                 # No session for this directory - clear the current one
@@ -636,10 +658,20 @@ async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             user_status = rate_limiter.get_user_status(user_id)
             cost_usage = user_status.get("cost_usage", {})
             current_cost = cost_usage.get("current", 0.0)
-            cost_limit = cost_usage.get("limit", settings.claude_max_cost_per_user)
-            cost_percentage = (current_cost / cost_limit) * 100 if cost_limit > 0 else 0
+            cost_limit = cost_usage.get(
+                "limit", settings.claude_max_cost_per_user
+            )
+            cost_percentage = (
+                (current_cost / cost_limit) * 100
+                if cost_limit > 0
+                else 0
+            )
 
-            usage_info = f"💰 Usage: ${current_cost:.2f} / ${cost_limit:.2f} ({cost_percentage:.0f}%)\n"
+            usage_info = (
+                f"💰 Usage: ${current_cost:.2f}"
+                f" / ${cost_limit:.2f}"
+                f" ({cost_percentage:.0f}%)\n"
+            )
         except Exception:
             usage_info = "💰 Usage: <i>Unable to retrieve</i>\n"
 
@@ -711,7 +743,6 @@ async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def export_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /export command."""
-    user_id = update.effective_user.id
     features = context.bot_data.get("features")
 
     # Check if session export is available
@@ -921,7 +952,9 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not (current_dir / ".git").exists():
             await update.message.reply_text(
                 f"📂 <b>Not a Git Repository</b>\n\n"
-                f"Current directory <code>{current_dir.relative_to(settings.approved_directory)}/</code> is not a git repository.\n\n"
+                f"Current directory <code>"
+                f"{current_dir.relative_to(settings.approved_directory)}"
+                f"/</code> is not a git repository.\n\n"
                 f"<b>Options:</b>\n"
                 f"• Navigate to a git repository with <code>/cd</code>\n"
                 f"• Initialize a new repository (ask Claude to help)\n"
@@ -934,7 +967,7 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # Format status message
         relative_path = current_dir.relative_to(settings.approved_directory)
-        status_message = f"🔗 <b>Git Repository Status</b>\n\n"
+        status_message = "🔗 <b>Git Repository Status</b>\n\n"
         status_message += f"📂 Directory: <code>{relative_path}/</code>\n"
         status_message += f"🌿 Branch: <code>{git_status.branch}</code>\n"
 
@@ -945,7 +978,7 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # Show file changes
         if not git_status.is_clean:
-            status_message += f"\n<b>Changes:</b>\n"
+            status_message += "\n<b>Changes:</b>\n"
             if git_status.modified:
                 status_message += f"📝 Modified: {len(git_status.modified)} files\n"
             if git_status.added:

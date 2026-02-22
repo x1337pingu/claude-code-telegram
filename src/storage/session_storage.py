@@ -11,7 +11,7 @@ import structlog
 
 from ..claude.session import ClaudeSession, SessionStorage
 from .database import DatabaseManager
-from .models import SessionModel, UserModel
+from .models import SessionModel
 
 logger = structlog.get_logger()
 
@@ -39,7 +39,10 @@ class SQLiteSessionStorage(SessionStorage):
                 now = datetime.utcnow()
                 await conn.execute(
                     """
-                    INSERT INTO users (user_id, telegram_username, first_seen, last_active, is_allowed)
+                    INSERT INTO users
+                    (user_id, telegram_username,
+                     first_seen, last_active,
+                     is_allowed)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
@@ -78,8 +81,11 @@ class SQLiteSessionStorage(SessionStorage):
             # Try to update first
             cursor = await conn.execute(
                 """
-                UPDATE sessions 
-                SET last_used = ?, total_cost = ?, total_turns = ?, message_count = ?
+                UPDATE sessions
+                SET last_used = ?,
+                    total_cost = ?,
+                    total_turns = ?,
+                    message_count = ?
                 WHERE session_id = ?
             """,
                 (
@@ -95,9 +101,11 @@ class SQLiteSessionStorage(SessionStorage):
             if cursor.rowcount == 0:
                 await conn.execute(
                     """
-                    INSERT INTO sessions 
-                    (session_id, user_id, project_path, created_at, last_used, 
-                     total_cost, total_turns, message_count)
+                    INSERT INTO sessions
+                    (session_id, user_id,
+                     project_path, created_at,
+                     last_used, total_cost,
+                     total_turns, message_count)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
@@ -170,8 +178,9 @@ class SQLiteSessionStorage(SessionStorage):
         async with self.db_manager.get_connection() as conn:
             cursor = await conn.execute(
                 """
-                SELECT * FROM sessions 
-                WHERE user_id = ? AND is_active = TRUE
+                SELECT * FROM sessions
+                WHERE user_id = ?
+                    AND is_active = TRUE
                 ORDER BY last_used DESC
             """,
                 (user_id,),
@@ -227,9 +236,11 @@ class SQLiteSessionStorage(SessionStorage):
         async with self.db_manager.get_connection() as conn:
             cursor = await conn.execute(
                 """
-                UPDATE sessions 
-                SET is_active = FALSE 
-                WHERE last_used < datetime('now', '-' || ? || ' hours')
+                UPDATE sessions
+                SET is_active = FALSE
+                WHERE last_used < datetime(
+                    'now', '-' || ? || ' hours'
+                )
                   AND is_active = TRUE
             """,
                 (timeout_hours,),

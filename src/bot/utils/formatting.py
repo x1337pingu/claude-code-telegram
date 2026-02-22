@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -135,11 +135,21 @@ class ResponseFormatter:
             )
 
         if language:
-            code_block = f'<pre><code class="language-{escape_html(language)}">{escaped_output}</code></pre>'
+            code_block = (
+                f'<pre><code class="language-'
+                f'{escape_html(language)}">'
+                f"{escaped_output}</code></pre>"
+            )
         else:
-            code_block = f"<pre><code>{escaped_output}</code></pre>"
+            code_block = (
+                f"<pre><code>{escaped_output}"
+                f"</code></pre>"
+            )
 
-        text = f"📄 <b>{escape_html(title)}</b>\n\n{code_block}"
+        text = (
+            f"📄 <b>{escape_html(title)}</b>"
+            f"\n\n{code_block}"
+        )
 
         return self._split_message(text)
 
@@ -211,7 +221,6 @@ class ResponseFormatter:
         lines = text.split("\n")
         current_section = {"type": "text", "content": "", "start_line": 0}
         in_code_block = False
-        code_start = 0
 
         for i, line in enumerate(lines):
             # Check for code block markers
@@ -221,7 +230,6 @@ class ResponseFormatter:
                     if current_section["content"].strip():
                         sections.append(current_section)
                     in_code_block = True
-                    code_start = i
                     current_section = {
                         "type": "code_block",
                         "content": line + "\n",
@@ -674,6 +682,10 @@ class CodeHighlighter:
 
         escaped_code = escape_html(code)
         if language:
-            return f'<pre><code class="language-{escape_html(language)}">{escaped_code}</code></pre>'
+            return (
+                f'<pre><code class="language-'
+                f'{escape_html(language)}">'
+                f"{escaped_code}</code></pre>"
+            )
         else:
             return f"<pre><code>{escaped_code}</code></pre>"

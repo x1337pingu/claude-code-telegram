@@ -353,7 +353,11 @@ async def threat_detection_middleware(
                 await audit_logger.log_security_violation(
                     user_id=user_id,
                     violation_type="reconnaissance_attempt",
-                    details=f"Multiple reconnaissance patterns detected: {user_data['recon_attempts']}",
+                    details=(
+                        f"Multiple reconnaissance "
+                        f"patterns detected: "
+                        f"{user_data['recon_attempts']}"
+                    ),
                     severity="high",
                     attempted_action="reconnaissance",
                 )

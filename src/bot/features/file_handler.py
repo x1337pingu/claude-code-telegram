@@ -248,7 +248,11 @@ class FileHandler:
             # Add key files
             for file_path in code_files[:5]:  # Limit to 5 files
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
-                prompt += f"\nFile: {file_path.relative_to(extract_dir)}\n```\n{content[:1000]}...\n```\n"
+                rel = file_path.relative_to(extract_dir)
+                prompt += (
+                    f"\nFile: {rel}\n```\n"
+                    f"{content[:1000]}...\n```\n"
+                )
 
             return ProcessedFile(
                 type="archive",
@@ -271,7 +275,11 @@ class FileHandler:
         language = self._detect_language(file_path.suffix)
 
         # Create prompt
-        prompt = f"{context}\n\nFile: {file_path.name}\nLanguage: {language}\n\n```{language.lower()}\n{content}\n```"
+        prompt = (
+            f"{context}\n\nFile: {file_path.name}\n"
+            f"Language: {language}\n\n"
+            f"```{language.lower()}\n{content}\n```"
+        )
 
         return ProcessedFile(
             type="code",

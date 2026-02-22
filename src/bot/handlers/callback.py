@@ -123,7 +123,9 @@ async def handle_cd_callback(
         if not new_path.exists() or not new_path.is_dir():
             await query.edit_message_text(
                 f"❌ <b>Directory Not Found</b>\n\n"
-                f"The directory <code>{escape_html(project_name)}</code> no longer exists or is not accessible.",
+                f"The directory "
+                f"<code>{escape_html(project_name)}</code> "
+                f"no longer exists or is not accessible.",
                 parse_mode="HTML",
             )
             return
@@ -461,10 +463,19 @@ async def _handle_continue_action(query, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if claude_session_id:
             # Continue with the existing session (no prompt = use --continue)
+            rel_dir = escape_html(
+                str(current_dir.relative_to(
+                    settings.approved_directory
+                ))
+            )
             await query.edit_message_text(
                 f"🔄 <b>Continuing Session</b>\n\n"
-                f"Session ID: <code>{escape_html(claude_session_id[:8])}...</code>\n"
-                f"Directory: <code>{escape_html(str(current_dir.relative_to(settings.approved_directory)))}/</code>\n\n"
+                f"Session ID: <code>"
+                f"{escape_html(claude_session_id[:8])}"
+                f"...</code>\n"
+                f"Directory: <code>"
+                f"{rel_dir}"
+                f"/</code>\n\n"
                 f"Continuing where you left off...",
                 parse_mode="HTML",
             )
@@ -496,15 +507,24 @@ async def _handle_continue_action(query, context: ContextTypes.DEFAULT_TYPE) -> 
             # Send Claude's response
             await query.message.reply_text(
                 f"✅ <b>Session Continued</b>\n\n"
-                f"{escape_html(claude_response.content[:500])}{'...' if len(claude_response.content) > 500 else ''}",
+                f"{escape_html(claude_response.content[:500])}"
+                f"{'...' if len(claude_response.content) > 500 else ''}",
                 parse_mode="HTML",
             )
         else:
             # No session found to continue
+            rel_dir2 = escape_html(
+                str(current_dir.relative_to(
+                    settings.approved_directory
+                ))
+            )
             await query.edit_message_text(
                 "❌ <b>No Session Found</b>\n\n"
-                f"No recent Claude session found in this directory.\n"
-                f"Directory: <code>{escape_html(str(current_dir.relative_to(settings.approved_directory)))}/</code>\n\n"
+                f"No recent Claude session found "
+                f"in this directory.\n"
+                f"Directory: <code>"
+                f"{rel_dir2}"
+                f"/</code>\n\n"
                 f"<b>What you can do:</b>\n"
                 f"• Use the button below to start a fresh session\n"
                 f"• Check your session status\n"
@@ -566,7 +586,11 @@ async def _handle_status_action(query, context: ContextTypes.DEFAULT_TYPE) -> No
             cost_limit = cost_usage.get("limit", settings.claude_max_cost_per_user)
             cost_percentage = (current_cost / cost_limit) * 100 if cost_limit > 0 else 0
 
-            usage_info = f"💰 Usage: ${current_cost:.2f} / ${cost_limit:.2f} ({cost_percentage:.0f}%)\n"
+            usage_info = (
+                f"💰 Usage: ${current_cost:.2f}"
+                f" / ${cost_limit:.2f}"
+                f" ({cost_percentage:.0f}%)\n"
+            )
         except Exception:
             usage_info = "💰 Usage: <i>Unable to retrieve</i>\n"
 
@@ -658,7 +682,11 @@ async def _handle_ls_action(query, context: ContextTypes.DEFAULT_TYPE) -> None:
         relative_path = current_dir.relative_to(settings.approved_directory)
 
         if not items:
-            message = f"📂 <code>{escape_html(str(relative_path))}/</code>\n\n<i>(empty directory)</i>"
+            message = (
+                f"📂 <code>"
+                f"{escape_html(str(relative_path))}"
+                f"/</code>\n\n<i>(empty directory)</i>"
+            )
         else:
             message = f"📂 <code>{escape_html(str(relative_path))}/</code>\n\n"
             max_items = 30  # Limit for inline display
@@ -743,7 +771,9 @@ async def _handle_quick_actions_action(
     await query.edit_message_text(
         "🛠️ <b>Quick Actions</b>\n\n"
         "Choose a common development task:\n\n"
-        "<i>Note: These will be fully functional once Claude Code integration is complete.</i>",
+        "<i>Note: These will be fully functional "
+        "once Claude Code integration is "
+        "complete.</i>",
         parse_mode="HTML",
         reply_markup=reply_markup,
     )
@@ -765,7 +795,9 @@ async def _handle_export_action(query, context: ContextTypes.DEFAULT_TYPE) -> No
     """Handle export action."""
     await query.edit_message_text(
         "📤 <b>Export Session</b>\n\n"
-        "Session export functionality will be available once the storage layer is implemented.\n\n"
+        "Session export functionality will be "
+        "available once the storage layer is "
+        "implemented.\n\n"
         "<b>Planned features:</b>\n"
         "• Export conversation history\n"
         "• Save session state\n"
@@ -822,7 +854,10 @@ async def handle_quick_action_callback(
         # Execute the action
         await query.edit_message_text(
             f"🚀 <b>Executing {action.icon} {escape_html(action.name)}</b>\n\n"
-            f"Running quick action in directory: <code>{escape_html(str(current_dir.relative_to(settings.approved_directory)))}/</code>\n\n"
+            f"Running quick action in directory: "
+            f"<code>"
+            f"{escape_html(str(current_dir.relative_to(settings.approved_directory)))}"
+            f"/</code>\n\n"
             f"Please wait...",
             parse_mode="HTML",
         )
@@ -841,7 +876,9 @@ async def handle_quick_action_callback(
                 )
 
             await query.message.reply_text(
-                f"✅ <b>{action.icon} {escape_html(action.name)} Complete</b>\n\n{response_text}",
+                f"✅ <b>{action.icon} "
+                f"{escape_html(action.name)} "
+                f"Complete</b>\n\n{response_text}",
                 parse_mode="HTML",
             )
         else:
@@ -855,7 +892,9 @@ async def handle_quick_action_callback(
         logger.error("Quick action execution failed", error=str(e), user_id=user_id)
         await query.edit_message_text(
             f"❌ <b>Action Error</b>\n\n"
-            f"An error occurred while executing {escape_html(action_id)}: {escape_html(str(e))}",
+            f"An error occurred while executing "
+            f"{escape_html(action_id)}: "
+            f"{escape_html(str(e))}",
             parse_mode="HTML",
         )
 
@@ -1192,7 +1231,8 @@ async def handle_export_callback(
         # Update the original message
         await query.edit_message_text(
             f"✅ <b>Export Complete</b>\n\n"
-            f"Your session has been exported as {escape_html(exported_session.filename)}.\n"
+            f"Your session has been exported as "
+            f"{escape_html(exported_session.filename)}.\n"
             f"Check the file above for your complete conversation history.",
             parse_mode="HTML",
         )

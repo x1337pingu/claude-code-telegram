@@ -236,14 +236,17 @@ async def burst_protection_middleware(
             if event.effective_message:
                 await event.effective_message.reply_text(
                     "🛑 <b>Rate limit warning</b>\n\n"
-                    "Please reduce your request frequency to avoid being temporarily blocked.",
+                    "Please reduce your request frequency "
+                    "to avoid being temporarily blocked.",
                     parse_mode="HTML",
                 )
         else:
             if event.effective_message:
                 await event.effective_message.reply_text(
                     "🚫 <b>Temporarily blocked</b>\n\n"
-                    "Too many rapid requests. Please wait 30 seconds before trying again.",
+                    "Too many rapid requests. "
+                    "Please wait 30 seconds "
+                    "before trying again.",
                     parse_mode="HTML",
                 )
             raise ApplicationHandlerStop

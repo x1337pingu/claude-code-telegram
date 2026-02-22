@@ -52,7 +52,11 @@ def markdown_to_telegram_html(text: str) -> str:
         code = m.group(2)
         escaped_code = escape_html(code)
         if lang:
-            html = f'<pre><code class="language-{escape_html(lang)}">{escaped_code}</code></pre>'
+            html = (
+                f'<pre><code class="language-'
+                f'{escape_html(lang)}">'
+                f"{escaped_code}</code></pre>"
+            )
         else:
             html = f"<pre><code>{escaped_code}</code></pre>"
         return _make_placeholder(html)

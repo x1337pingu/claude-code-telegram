@@ -106,7 +106,6 @@ class ClaudeCodeBot:
         # Middleware runs in order of group numbers (lower = earlier)
         # TypeHandler(Update) catches ALL update types including CallbackQuery
         # ApplicationHandlerStop in middleware prevents later groups from running
-
         # Authentication FIRST (most critical — block unauthorized users)
         self.app.add_handler(
             TypeHandler(Update, self._create_middleware_handler(auth_middleware)),
@@ -240,7 +239,6 @@ class ClaudeCodeBot:
             RateLimitExceeded,
             SecurityError,
         )
-
         from .personality import Personality
 
         error_messages = {
