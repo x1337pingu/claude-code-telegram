@@ -3,7 +3,9 @@
 from typing import Any, Callable, Dict
 
 import structlog
+from telegram.ext import ApplicationHandlerStop
 
+from ..personality import Personality
 from ..utils.html_format import escape_html
 
 logger = structlog.get_logger()
@@ -41,20 +43,27 @@ async def security_middleware(
         return await handler(event, data)
 
     # Validate text content if present
+    # Skip security validation for authorized users (admin) - they need to
+    # discuss paths, commands, and technical content freely
+    auth_manager = data.get("auth_manager")
+    is_authorized = (
+        auth_manager and auth_manager.is_authenticated(user_id)
+        if auth_manager
+        else False
+    )
+
     message = event.effective_message
-    if message and message.text:
+    if message and message.text and not is_authorized:
+        logger.info("Validating unauthenticated user message", user_id=user_id)
         is_safe, violation_type = await validate_message_content(
             message.text, security_validator, user_id, audit_logger
         )
         if not is_safe:
             await message.reply_text(
-                f"🛡️ <b>Security Alert</b>\n\n"
-                f"Your message contains potentially dangerous content and has been blocked.\n"
-                f"Violation: {escape_html(violation_type)}\n\n"
-                "If you believe this is an error, please contact the administrator.",
+                Personality.security_blocked(),
                 parse_mode="HTML",
             )
-            return  # Block processing
+            raise ApplicationHandlerStop
 
     # Validate file uploads if present
     if message and message.document:
@@ -68,7 +77,7 @@ async def security_middleware(
                 "Please ensure your file meets security requirements.",
                 parse_mode="HTML",
             )
-            return  # Block processing
+            raise ApplicationHandlerStop
 
     # Log successful security validation
     logger.debug(
@@ -88,20 +97,15 @@ async def validate_message_content(
 ) -> tuple[bool, str]:
     """Validate message text content for security threats."""
 
-    # Check for command injection patterns
+    # Check for command injection patterns (only real injection vectors)
+    # Backticks, $() and # are normal in code discussions — NOT blocked.
     dangerous_patterns = [
-        r";\s*rm\s+",
-        r";\s*del\s+",
-        r";\s*format\s+",
-        r"`[^`]*`",
-        r"\$\([^)]*\)",
-        r"&&\s*rm\s+",
-        r"\|\s*mail\s+",
-        r">\s*/dev/",
+        r";\s*rm\s+-rf?\s+/",
+        r";\s*del\s+/",
+        r"&&\s*rm\s+-rf?\s+/",
         r"curl\s+.*\|\s*sh",
         r"wget\s+.*\|\s*sh",
-        r"exec\s*\(",
-        r"eval\s*\(",
+        r">\s*/dev/sd",
     ]
 
     import re
@@ -125,15 +129,9 @@ async def validate_message_content(
             )
             return False, "Command injection attempt"
 
-    # Check for path traversal attempts
+    # Check for path traversal (only real traversal, not normal paths)
     path_traversal_patterns = [
-        r"\.\./.*",
-        r"~\/.*",
-        r"\/etc\/.*",
-        r"\/var\/.*",
-        r"\/usr\/.*",
-        r"\/sys\/.*",
-        r"\/proc\/.*",
+        r"\.\./",
     ]
 
     for pattern in path_traversal_patterns:
@@ -180,25 +178,8 @@ async def validate_message_content(
             logger.warning("Suspicious URL detected", user_id=user_id, pattern=pattern)
             return False, "Suspicious URL detected"
 
-    # Sanitize content using security validator
-    sanitized = security_validator.sanitize_command_input(text)
-    if len(sanitized) < len(text) * 0.5:  # More than 50% removed
-        if audit_logger:
-            await audit_logger.log_security_violation(
-                user_id=user_id,
-                violation_type="excessive_sanitization",
-                details="More than 50% of content was dangerous",
-                severity="medium",
-                attempted_action="message_send",
-            )
-
-        logger.warning(
-            "Excessive content sanitization required",
-            user_id=user_id,
-            original_length=len(text),
-            sanitized_length=len(sanitized),
-        )
-        return False, "Content contains too many dangerous characters"
+    # Sanitization ratio check removed — ToolMonitor validates tools individually,
+    # and this check was triggering on normal code discussions with #, <>, etc.
 
     return True, ""
 

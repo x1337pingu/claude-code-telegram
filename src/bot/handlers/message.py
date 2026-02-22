@@ -12,6 +12,7 @@ from ...config.settings import Settings
 from ...security.audit import AuditLogger
 from ...security.rate_limiter import RateLimiter
 from ...security.validators import SecurityValidator
+from ..personality import Personality
 from ..utils.html_format import escape_html
 
 logger = structlog.get_logger()
@@ -85,53 +86,45 @@ async def _format_progress_update(update_obj) -> Optional[str]:
 
 
 def _format_error_message(error_str: str) -> str:
-    """Format error messages for user-friendly display."""
-    if "usage limit reached" in error_str.lower():
-        # Usage limit error - already user-friendly from integration.py
-        return error_str
-    elif "tool not allowed" in error_str.lower():
-        # Tool validation error - already handled in facade.py
-        return error_str
-    elif "no conversation found" in error_str.lower():
-        return (
-            f"🔄 <b>Session Not Found</b>\n\n"
-            f"The Claude session could not be found or has expired.\n\n"
-            f"<b>What you can do:</b>\n"
-            f"• Use /new to start a fresh session\n"
-            f"• Try your request again\n"
-            f"• Use /status to check your current session"
-        )
-    elif "rate limit" in error_str.lower():
-        return (
-            f"⏱️ <b>Rate Limit Reached</b>\n\n"
-            f"Too many requests in a short time period.\n\n"
-            f"<b>What you can do:</b>\n"
-            f"• Wait a moment before trying again\n"
-            f"• Use simpler requests\n"
-            f"• Check your current usage with /status"
-        )
-    elif "timeout" in error_str.lower():
-        return (
-            f"⏰ <b>Request Timeout</b>\n\n"
-            f"Your request took too long to process and timed out.\n\n"
-            f"<b>What you can do:</b>\n"
-            f"• Try breaking down your request into smaller parts\n"
-            f"• Use simpler commands\n"
-            f"• Try again in a moment"
-        )
-    else:
-        # Generic error handling
-        # Escape HTML special characters in error message
-        safe_error = escape_html(error_str)
-        # Truncate very long errors
-        if len(safe_error) > 200:
-            safe_error = safe_error[:200] + "..."
+    """Format error messages with fine-grained discrimination.
 
-        return (
-            f"❌ <b>Claude Code Error</b>\n\n"
-            f"Failed to process your request: {safe_error}\n\n"
-            f"Please try again or contact the administrator if the problem persists."
-        )
+    Distinguishes Claude API errors (429, overloaded, transient) from
+    bot-level rate limits, timeouts, and session issues.
+    """
+    lower = error_str.lower()
+
+    # 1. Already user-friendly messages — pass through
+    if "usage limit reached" in lower:
+        return error_str
+    if "tool not allowed" in lower:
+        return error_str
+
+    # 2. Session expired / not found
+    if "no conversation found" in lower:
+        return Personality.session_expired()
+
+    # 3. Timeout
+    if "timeout" in lower or "timed out" in lower:
+        return Personality.timeout_error()
+
+    # 4. Claude API / transient errors (NOT bot rate limit)
+    api_error_signals = [
+        "overloaded",
+        "429",
+        "too many requests",
+        "anthropic",
+        "api error",
+        "503",
+        "502",
+        "500",
+        "internal server error",
+        "rate limit",  # API rate limit, not bot's
+    ]
+    if any(signal in lower for signal in api_error_signals):
+        return Personality.api_error()
+
+    # 5. Generic — show truncated real error
+    return Personality.generic_error(error_str)
 
 
 async def handle_text_message(

@@ -15,8 +15,7 @@ from telegram import Update
 from telegram.ext import (
     Application,
     ContextTypes,
-    MessageHandler,
-    filters,
+    TypeHandler,
 )
 
 from ..config.settings import Settings
@@ -93,37 +92,40 @@ class ClaudeCodeBot:
         self.orchestrator.register_handlers(self.app)
 
     def _add_middleware(self) -> None:
-        """Add middleware to application."""
+        """Add middleware to application.
+
+        Uses TypeHandler(Update) instead of MessageHandler(filters.ALL) to
+        intercept ALL update types (messages, callback queries, etc.).
+        Middleware raises ApplicationHandlerStop to block unauthorized updates
+        from reaching any handler group.
+        """
         from .middleware.auth import auth_middleware
         from .middleware.rate_limit import rate_limit_middleware
         from .middleware.security import security_middleware
 
         # Middleware runs in order of group numbers (lower = earlier)
-        # Security middleware first (validate inputs)
+        # TypeHandler(Update) catches ALL update types including CallbackQuery
+        # ApplicationHandlerStop in middleware prevents later groups from running
+
+        # Authentication FIRST (most critical — block unauthorized users)
         self.app.add_handler(
-            MessageHandler(
-                filters.ALL, self._create_middleware_handler(security_middleware)
-            ),
+            TypeHandler(Update, self._create_middleware_handler(auth_middleware)),
             group=-3,
         )
 
-        # Authentication second
+        # Security validation second (only for authenticated users)
         self.app.add_handler(
-            MessageHandler(
-                filters.ALL, self._create_middleware_handler(auth_middleware)
-            ),
+            TypeHandler(Update, self._create_middleware_handler(security_middleware)),
             group=-2,
         )
 
         # Rate limiting third
         self.app.add_handler(
-            MessageHandler(
-                filters.ALL, self._create_middleware_handler(rate_limit_middleware)
-            ),
+            TypeHandler(Update, self._create_middleware_handler(rate_limit_middleware)),
             group=-1,
         )
 
-        logger.info("Middleware added to bot")
+        logger.info("Middleware added to bot (TypeHandler + ApplicationHandlerStop)")
 
     def _create_middleware_handler(self, middleware_func: Callable) -> Callable:
         """Create middleware handler that injects dependencies."""
@@ -136,7 +138,7 @@ class ClaudeCodeBot:
                 context.bot_data[key] = value
             context.bot_data["settings"] = self.settings
 
-            # Create a dummy handler that does nothing (middleware will handle everything)
+            # Dummy handler (middleware handles everything)
             async def dummy_handler(event, data):
                 return None
 
@@ -239,17 +241,19 @@ class ClaudeCodeBot:
             SecurityError,
         )
 
+        from .personality import Personality
+
         error_messages = {
-            AuthenticationError: "🔒 Authentication required. Please contact the administrator.",
-            SecurityError: "🛡️ Security violation detected. This incident has been logged.",
-            RateLimitExceeded: "⏱️ Rate limit exceeded. Please wait before sending more messages.",
-            ConfigurationError: "⚙️ Configuration error. Please contact the administrator.",
-            asyncio.TimeoutError: "⏰ Operation timed out. Please try again with a simpler request.",
+            AuthenticationError: Personality.auth_required(),
+            SecurityError: Personality.security_blocked(),
+            RateLimitExceeded: Personality.bot_rate_limit(),
+            ConfigurationError: "Erreur de configuration. Contacte l'administrateur.",
+            asyncio.TimeoutError: Personality.timeout_error(),
         }
 
         error_type = type(error)
         user_message = error_messages.get(
-            error_type, "❌ An unexpected error occurred. Please try again."
+            error_type, "Une erreur inattendue est survenue. Reessaie."
         )
 
         # Try to notify user

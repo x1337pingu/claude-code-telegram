@@ -110,10 +110,11 @@ class ClaudeProcessManager:
         session_id: Optional[str] = None,
         continue_session: bool = False,
         stream_callback: Optional[Callable[[StreamUpdate], None]] = None,
+        model: Optional[str] = None,
     ) -> ClaudeResponse:
         """Execute Claude Code command."""
         # Build command
-        cmd = self._build_command(prompt, session_id, continue_session)
+        cmd = self._build_command(prompt, session_id, continue_session, model)
 
         # Create process ID for tracking
         process_id = str(uuid.uuid4())
@@ -176,10 +177,18 @@ class ClaudeProcessManager:
                 del self.active_processes[process_id]
 
     def _build_command(
-        self, prompt: str, session_id: Optional[str], continue_session: bool
+        self,
+        prompt: str,
+        session_id: Optional[str],
+        continue_session: bool,
+        model: Optional[str] = None,
     ) -> List[str]:
         """Build Claude Code command with arguments."""
         cmd = [self.config.claude_binary_path or "claude"]
+
+        # Model selection
+        if model:
+            cmd.extend(["--model", model])
 
         if continue_session and not prompt:
             # Continue existing session without new prompt
@@ -221,11 +230,21 @@ class ClaudeProcessManager:
 
     async def _start_process(self, cmd: List[str], cwd: Path) -> Process:
         """Start Claude Code subprocess."""
+        import os
+
+        # Strip nesting detection env vars so Claude CLI doesn't refuse to run
+        clean_env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
+        }
+
         return await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
+            env=clean_env,
             # Limit memory usage
             limit=1024 * 1024 * 512,  # 512MB
         )

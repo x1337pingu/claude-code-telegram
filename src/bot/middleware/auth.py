@@ -1,9 +1,9 @@
 """Telegram bot authentication middleware."""
 
-from datetime import datetime
 from typing import Any, Callable, Dict
 
 import structlog
+from telegram.ext import ApplicationHandlerStop
 
 logger = structlog.get_logger()
 
@@ -26,8 +26,8 @@ async def auth_middleware(handler: Callable, event: Any, data: Dict[str, Any]) -
     )
 
     if not user_id:
-        logger.warning("No user information in update")
-        return
+        logger.warning("No user information in update — blocking")
+        raise ApplicationHandlerStop
 
     # Get dependencies from context
     auth_manager = data.get("auth_manager")
@@ -39,7 +39,7 @@ async def auth_middleware(handler: Callable, event: Any, data: Dict[str, Any]) -
             await event.effective_message.reply_text(
                 "🔒 Authentication system unavailable. Please try again later."
             )
-        return
+        raise ApplicationHandlerStop
 
     # Check if user is already authenticated
     if auth_manager.is_authenticated(user_id):
@@ -82,14 +82,7 @@ async def auth_middleware(handler: Callable, event: Any, data: Dict[str, Any]) -
             auth_provider=session.auth_provider if session else None,
         )
 
-        # Welcome message for new session
-        if event.effective_message:
-            await event.effective_message.reply_text(
-                f"🔓 Welcome! You are now authenticated.\n"
-                f"Session started at {datetime.utcnow().strftime('%H:%M:%S UTC')}"
-            )
-
-        # Continue to handler
+        # Continue to handler (no welcome here — /start handles it)
         return await handler(event, data)
 
     else:
@@ -105,7 +98,7 @@ async def auth_middleware(handler: Callable, event: Any, data: Dict[str, Any]) -
                 "Share this ID with the administrator to request access.",
                 parse_mode="HTML",
             )
-        return  # Stop processing
+        raise ApplicationHandlerStop
 
 
 async def require_auth(handler: Callable, event: Any, data: Dict[str, Any]) -> Any:
@@ -121,7 +114,7 @@ async def require_auth(handler: Callable, event: Any, data: Dict[str, Any]) -> A
             await event.effective_message.reply_text(
                 "🔒 Authentication required to use this command."
             )
-        return
+        raise ApplicationHandlerStop
 
     return await handler(event, data)
 
@@ -138,7 +131,7 @@ async def admin_required(handler: Callable, event: Any, data: Dict[str, Any]) ->
     if not auth_manager or not auth_manager.is_authenticated(user_id):
         if event.effective_message:
             await event.effective_message.reply_text("🔒 Authentication required.")
-        return
+        raise ApplicationHandlerStop
 
     session = auth_manager.get_session(user_id)
     if not session or not session.user_info:
@@ -146,7 +139,7 @@ async def admin_required(handler: Callable, event: Any, data: Dict[str, Any]) ->
             await event.effective_message.reply_text(
                 "🔒 Session information unavailable."
             )
-        return
+        raise ApplicationHandlerStop
 
     # Check for admin permissions (placeholder logic)
     permissions = session.user_info.get("permissions", [])
@@ -157,6 +150,6 @@ async def admin_required(handler: Callable, event: Any, data: Dict[str, Any]) ->
                 "This command requires administrator privileges.",
                 parse_mode="HTML",
             )
-        return
+        raise ApplicationHandlerStop
 
     return await handler(event, data)

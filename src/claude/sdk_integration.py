@@ -143,6 +143,11 @@ class ClaudeSDKManager:
                 "SDK may fail if Claude is not installed or not in PATH."
             )
 
+        # Clear Claude nesting detection env vars so the SDK can spawn
+        # the CLI without "cannot be launched inside another Claude Code session"
+        for var in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"):
+            os.environ.pop(var, None)
+
         # Set up environment for Claude Code SDK if API key is provided
         # If no API key is provided, the SDK will use existing CLI authentication
         if config.anthropic_api_key_str:
@@ -158,6 +163,7 @@ class ClaudeSDKManager:
         session_id: Optional[str] = None,
         continue_session: bool = False,
         stream_callback: Optional[Callable[[StreamUpdate], None]] = None,
+        model: Optional[str] = None,
     ) -> ClaudeResponse:
         """Execute Claude Code command via SDK."""
         start_time = asyncio.get_event_loop().time()
@@ -177,6 +183,7 @@ class ClaudeSDKManager:
                 cwd=str(working_directory),
                 allowed_tools=self.config.claude_allowed_tools,
                 cli_path=cli_path,
+                model=model,
             )
 
             # Pass MCP server configuration if enabled

@@ -3,6 +3,7 @@
 from typing import Any, Callable, Dict
 
 import structlog
+from telegram.ext import ApplicationHandlerStop
 
 logger = structlog.get_logger()
 
@@ -66,8 +67,10 @@ async def rate_limit_middleware(
 
         # Send user-friendly rate limit message
         if event.effective_message:
-            await event.effective_message.reply_text(f"⏱️ {message}")
-        return  # Stop processing
+            from ..personality import Personality
+
+            await event.effective_message.reply_text(Personality.bot_rate_limit())
+        raise ApplicationHandlerStop
 
     # Rate limit check passed
     logger.debug(
@@ -91,7 +94,7 @@ def estimate_message_cost(event: Any) -> float:
     - Expected Claude usage
     """
     message = event.effective_message
-    message_text = message.text if message else ""
+    message_text = (message.text or "") if message else ""
 
     # Base cost for any message
     base_cost = 0.01
@@ -243,6 +246,6 @@ async def burst_protection_middleware(
                     "Too many rapid requests. Please wait 30 seconds before trying again.",
                     parse_mode="HTML",
                 )
-            return  # Block this request
+            raise ApplicationHandlerStop
 
     return await handler(event, data)
