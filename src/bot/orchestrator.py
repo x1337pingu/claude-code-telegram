@@ -875,7 +875,21 @@ class MessageOrchestrator:
             if force_new:
                 context.user_data["force_new_session"] = False
 
-            context.user_data["claude_session_id"] = claude_response.session_id
+            # After a timeout, don't resume the same session (it will
+            # likely timeout again). Force a fresh session next time.
+            if claude_response.is_error and claude_response.error_type in (
+                "timeout_partial",
+                "timeout",
+            ):
+                logger.warning(
+                    "Session timed out — will start fresh next message",
+                    session_id=claude_response.session_id,
+                    user_id=user_id,
+                )
+                context.user_data.pop("claude_session_id", None)
+                context.user_data["force_new_session"] = True
+            else:
+                context.user_data["claude_session_id"] = claude_response.session_id
 
             # Track directory changes
             from .handlers.message import _update_working_directory_from_claude_response
@@ -1098,7 +1112,14 @@ class MessageOrchestrator:
             if force_new:
                 context.user_data["force_new_session"] = False
 
-            context.user_data["claude_session_id"] = claude_response.session_id
+            if claude_response.is_error and claude_response.error_type in (
+                "timeout_partial",
+                "timeout",
+            ):
+                context.user_data.pop("claude_session_id", None)
+                context.user_data["force_new_session"] = True
+            else:
+                context.user_data["claude_session_id"] = claude_response.session_id
 
             from .handlers.message import _update_working_directory_from_claude_response
 
@@ -1199,7 +1220,14 @@ class MessageOrchestrator:
             if force_new:
                 context.user_data["force_new_session"] = False
 
-            context.user_data["claude_session_id"] = claude_response.session_id
+            if claude_response.is_error and claude_response.error_type in (
+                "timeout_partial",
+                "timeout",
+            ):
+                context.user_data.pop("claude_session_id", None)
+                context.user_data["force_new_session"] = True
+            else:
+                context.user_data["claude_session_id"] = claude_response.session_id
 
             from .utils.formatting import ResponseFormatter
 
