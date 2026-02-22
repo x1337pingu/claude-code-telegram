@@ -132,7 +132,9 @@ class ClaudeCodeBot:
 
         logger.info("Middleware added to bot")
 
-    def _create_middleware_handler(self, middleware_func: Callable[..., Any]) -> Callable[..., Any]:
+    def _create_middleware_handler(
+        self, middleware_func: Callable[..., Any]
+    ) -> Callable[..., Any]:
         """Create middleware handler that injects dependencies.
 
         When middleware rejects a request (returns without calling the handler),

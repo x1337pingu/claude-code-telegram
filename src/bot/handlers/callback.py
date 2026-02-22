@@ -302,7 +302,9 @@ async def handle_confirm_callback(
 # Action handlers
 
 
-async def _handle_help_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_help_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle help action."""
     help_text = (
         "🤖 <b>Quick Help</b>\n\n"
@@ -429,7 +431,9 @@ async def _handle_show_projects_action(
         await query.edit_message_text(f"❌ Error loading projects: {str(e)}")
 
 
-async def _handle_new_session_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_new_session_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle new session action."""
     if context.user_data is None:
         context.user_data = {}
@@ -471,7 +475,9 @@ async def _handle_new_session_action(query: CallbackQuery, context: ContextTypes
     )
 
 
-async def _handle_end_session_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_end_session_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle end session action."""
     if context.user_data is None:
         context.user_data = {}
@@ -544,7 +550,9 @@ async def _handle_end_session_action(query: CallbackQuery, context: ContextTypes
     )
 
 
-async def _handle_continue_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_continue_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle continue session action."""
     if context.user_data is None:
         context.user_data = {}
@@ -653,7 +661,9 @@ async def _handle_continue_action(query: CallbackQuery, context: ContextTypes.DE
         )
 
 
-async def _handle_status_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_status_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle status action."""
     if context.user_data is None:
         context.user_data = {}
@@ -736,7 +746,9 @@ async def _handle_status_action(query: CallbackQuery, context: ContextTypes.DEFA
     )
 
 
-async def _handle_ls_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_ls_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle ls action."""
     if context.user_data is None:
         context.user_data = {}
@@ -870,12 +882,16 @@ async def _handle_refresh_status_action(
     await _handle_status_action(query, context)
 
 
-async def _handle_refresh_ls_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_refresh_ls_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle refresh ls action."""
     await _handle_ls_action(query, context)
 
 
-async def _handle_export_action(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _handle_export_action(
+    query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     """Handle export action."""
     await query.edit_message_text(
         "📤 <b>Export Session</b>\n\n"

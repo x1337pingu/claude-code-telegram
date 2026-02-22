@@ -458,9 +458,7 @@ async def handle_text_message(
                     await message.reply_text(
                         fmt_msg.text,
                         reply_markup=fmt_msg.reply_markup,
-                        reply_to_message_id=(
-                            message.message_id if i == 0 else None
-                        ),
+                        reply_to_message_id=(message.message_id if i == 0 else None),
                     )
                 except Exception as plain_err:
                     # Include what actually went wrong instead of a generic message
@@ -468,9 +466,7 @@ async def handle_text_message(
                         f"Failed to deliver response "
                         f"(Telegram error: {str(plain_err)[:150]}). "
                         f"Please try again.",
-                        reply_to_message_id=(
-                            message.message_id if i == 0 else None
-                        ),
+                        reply_to_message_id=(message.message_id if i == 0 else None),
                     )
 
         # Update session info
@@ -827,9 +823,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             photo = message.photo[-1]
 
             # Process image with enhanced handler
-            processed_image = await image_handler.process_image(
-                photo, message.caption
-            )
+            processed_image = await image_handler.process_image(photo, message.caption)
 
             # Delete progress message
             await progress_msg.delete()
@@ -885,9 +879,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                         fmt_msg.text,
                         parse_mode=fmt_msg.parse_mode,
                         reply_markup=fmt_msg.reply_markup,
-                        reply_to_message_id=(
-                            message.message_id if i == 0 else None
-                        ),
+                        reply_to_message_id=(message.message_id if i == 0 else None),
                     )
 
                     if i < len(formatted_messages) - 1:
@@ -1039,7 +1031,10 @@ async def _generate_placeholder_response(
 
 
 def _update_working_directory_from_claude_response(
-    claude_response: Any, context: ContextTypes.DEFAULT_TYPE, settings: Any, user_id: int
+    claude_response: Any,
+    context: ContextTypes.DEFAULT_TYPE,
+    settings: Any,
+    user_id: int,
 ) -> None:
     """Update the working directory based on Claude's response content."""
     import re

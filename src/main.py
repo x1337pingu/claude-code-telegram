@@ -12,6 +12,7 @@ import structlog
 
 from src import __version__
 from src.bot.core import ClaudeCodeBot
+from src.bot.message_queue import UserMessageQueue
 from src.claude import (
     ClaudeIntegration,
     SessionManager,
@@ -117,7 +118,9 @@ async def create_application(config: Settings) -> Dict[str, Any]:
     if config.enable_token_auth and config.auth_token_secret:
         token_storage = InMemoryTokenStorage()  # TODO: Use database storage
         providers.append(
-            TokenAuthProvider(config.auth_token_secret.get_secret_value(), token_storage)
+            TokenAuthProvider(
+                config.auth_token_secret.get_secret_value(), token_storage
+            )
         )
 
     # Fall back to allowing all users in development mode
@@ -179,6 +182,9 @@ async def create_application(config: Settings) -> Dict[str, Any]:
     )
     agent_handler.register()
 
+    # Per-user message queue for interrupt-and-merge
+    message_queue = UserMessageQueue()
+
     # Create bot with all dependencies
     dependencies = {
         "auth_manager": auth_manager,
@@ -188,6 +194,7 @@ async def create_application(config: Settings) -> Dict[str, Any]:
         "claude_integration": claude_integration,
         "storage": storage,
         "event_bus": event_bus,
+        "message_queue": message_queue,
         "project_registry": None,
         "project_threads_manager": None,
     }

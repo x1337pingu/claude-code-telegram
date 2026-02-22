@@ -205,9 +205,7 @@ class ClaudeIntegration:
 
                 # Create user-friendly error message
                 if blocked_tool_names:
-                    tool_list = ", ".join(
-                        f"`{tool}`" for tool in blocked_tool_names
-                    )
+                    tool_list = ", ".join(f"`{tool}`" for tool in blocked_tool_names)
                     response.content = (
                         f"🚫 **Tool Access Blocked**\n\n"
                         f"Claude tried to use tools not allowed:\n"

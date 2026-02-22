@@ -262,10 +262,7 @@ async def sync_threads(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
         chat = update.effective_chat
-        if (
-            not chat
-            or chat.id != settings.project_threads_chat_id
-        ):
+        if not chat or chat.id != settings.project_threads_chat_id:
             await status_msg.edit_text(
                 "❌ <b>Group Thread Mode</b>\n\n"
                 "Run <code>/sync_threads</code> in the configured project threads group.",
@@ -619,9 +616,7 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
-        await message.reply_text(
-            msg_text, parse_mode="HTML", reply_markup=reply_markup
-        )
+        await message.reply_text(msg_text, parse_mode="HTML", reply_markup=reply_markup)
 
         # Log successful command
         if audit_logger:
@@ -691,9 +686,7 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 )
 
                 if not valid:
-                    await message.reply_text(
-                        f"❌ <b>Access Denied</b>\n\n{error}"
-                    )
+                    await message.reply_text(f"❌ <b>Access Denied</b>\n\n{error}")
 
                     # Log security violation
                     if audit_logger:
@@ -899,7 +892,9 @@ async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        project_list_text = "\n".join([f"• <code>{project}/</code>" for project in projects_list])
+        project_list_text = "\n".join(
+            [f"• <code>{project}/</code>" for project in projects_list]
+        )
 
         await message.reply_text(
             f"📁 <b>Available Projects</b>\n\n"
@@ -964,7 +959,7 @@ async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Format status message
     msg_date = message.date
-    date_str = msg_date.strftime('%H:%M:%S UTC') if msg_date else "N/A"
+    date_str = msg_date.strftime("%H:%M:%S UTC") if msg_date else "N/A"
     status_lines = [
         "📊 <b>Session Status</b>",
         "",

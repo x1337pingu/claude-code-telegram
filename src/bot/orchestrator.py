@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import structlog
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    Update,
+)
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -23,9 +29,11 @@ from telegram.ext import (
 )
 
 from ..claude.exceptions import ClaudeToolValidationError
-from ..claude.sdk_integration import StreamUpdate
+from ..claude.facade import ClaudeIntegration
+from ..claude.sdk_integration import ClaudeResponse, StreamUpdate
 from ..config.settings import Settings
 from ..projects import PrivateTopicsUnavailableError
+from .message_queue import ActiveTask, UserMessageQueue
 from .utils.html_format import escape_html
 
 logger = structlog.get_logger()
@@ -600,9 +608,7 @@ class MessageOrchestrator:
             time_str = f"{elapsed / 60:.0f}m{elapsed % 60:.0f}s"
 
         tool_count = sum(1 for e in activity_log if e.get("kind") == "tool")
-        lines: List[str] = [
-            f"Working... ({time_str} \u2022 {tool_count} tools)\n"
-        ]
+        lines: List[str] = [f"Working... ({time_str} \u2022 {tool_count} tools)\n"]
 
         # Show last 12 entries for readability
         for entry in activity_log[-12:]:
@@ -723,16 +729,10 @@ class MessageOrchestrator:
                 text = update_obj.content.strip()
                 if text and verbose_level >= 1:
                     # Keep multiple meaningful lines for context
-                    meaningful = [
-                        ln.strip()
-                        for ln in text.split("\n")
-                        if ln.strip()
-                    ]
+                    meaningful = [ln.strip() for ln in text.split("\n") if ln.strip()]
                     for line in meaningful[:3]:
                         if line:
-                            tool_log.append(
-                                {"kind": "text", "detail": line[:180]}
-                            )
+                            tool_log.append({"kind": "text", "detail": line[:180]})
 
             # Adaptive throttle: fast at start, slower for long tasks
             now = time.time()
@@ -762,7 +762,11 @@ class MessageOrchestrator:
     async def agentic_text(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Direct Claude passthrough. Simple progress. No suggestions."""
+        """Direct Claude passthrough with message queue / interruption support.
+
+        If the user sends a new message while Claude is processing, the active
+        task is cancelled and Claude restarts with both prompts merged.
+        """
         user = update.effective_user
         message = update.effective_message
         if not user or not message:
@@ -779,6 +783,20 @@ class MessageOrchestrator:
             message_length=len(message_text),
         )
 
+        # --- Message queue: cancel active task if user sends while busy ---
+        queue: Optional[UserMessageQueue] = context.bot_data.get("message_queue")
+        if queue and queue.is_busy(user_id):
+            original_prompt = await queue.cancel_if_active(user_id)
+            if original_prompt:
+                message_text = UserMessageQueue.merge_prompts(
+                    original_prompt, message_text
+                )
+                logger.info(
+                    "Merged prompts after interruption",
+                    user_id=user_id,
+                    merged_length=len(message_text),
+                )
+
         # Rate limit check
         rate_limiter = context.bot_data.get("rate_limiter")
         if rate_limiter:
@@ -793,12 +811,13 @@ class MessageOrchestrator:
         verbose_level = self._get_verbose_level(context)
         progress_msg = await message.reply_text("Working...")
 
-        claude_integration = context.bot_data.get("claude_integration")
-        if not claude_integration:
+        ci: Optional[ClaudeIntegration] = context.bot_data.get("claude_integration")
+        if not ci:
             await progress_msg.edit_text(
                 "Claude integration not available. Check configuration."
             )
             return
+        claude_integration: ClaudeIntegration = ci
 
         current_dir = context.user_data.get(
             "current_directory", self.settings.approved_directory
@@ -819,16 +838,38 @@ class MessageOrchestrator:
         # Independent typing heartbeat — stays alive even with no stream events
         heartbeat = self._start_typing_heartbeat(chat)
 
-        success = True
-        try:
-            claude_response = await claude_integration.run_command(
-                prompt=message_text,
+        # Capture final prompt for the queue (may be merged)
+        final_prompt = message_text
+
+        # --- Wrap Claude execution in a cancellable task ---
+        async def _run_claude() -> ClaudeResponse:
+            return await claude_integration.run_command(
+                prompt=final_prompt,
                 working_directory=current_dir,
                 user_id=user_id,
                 session_id=session_id,
                 on_stream=on_stream,
                 force_new=force_new,
             )
+
+        claude_task = asyncio.create_task(_run_claude())
+
+        # Register with message queue so a subsequent message can cancel us
+        if queue:
+            queue.register(
+                user_id,
+                ActiveTask(
+                    task=claude_task,
+                    original_prompt=final_prompt,
+                    user_id=user_id,
+                    progress_msg=progress_msg,
+                    heartbeat=heartbeat,
+                ),
+            )
+
+        success = True
+        try:
+            claude_response = await claude_task
 
             # New session created successfully — clear the one-shot flag
             if force_new:
@@ -850,7 +891,7 @@ class MessageOrchestrator:
                     await storage.save_claude_interaction(
                         user_id=user_id,
                         session_id=claude_response.session_id,
-                        prompt=message_text,
+                        prompt=final_prompt,
                         response=claude_response,
                         ip_address=None,
                     )
@@ -864,6 +905,15 @@ class MessageOrchestrator:
             formatted_messages = formatter.format_claude_response(
                 claude_response.content
             )
+
+        except asyncio.CancelledError:
+            # Cancelled by a newer message — clean up silently
+            logger.info("Claude task cancelled by newer message", user_id=user_id)
+            try:
+                await progress_msg.delete()
+            except Exception:
+                pass
+            return
 
         except ClaudeToolValidationError as e:
             success = False
@@ -883,8 +933,13 @@ class MessageOrchestrator:
             ]
         finally:
             heartbeat.cancel()
+            if queue:
+                queue.unregister(user_id)
 
-        await progress_msg.delete()
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
 
         for i, fmt_msg in enumerate(formatted_messages):
             if not fmt_msg.text or not fmt_msg.text.strip():
@@ -908,18 +963,14 @@ class MessageOrchestrator:
                     await message.reply_text(
                         fmt_msg.text,
                         reply_markup=None,
-                        reply_to_message_id=(
-                            message.message_id if i == 0 else None
-                        ),
+                        reply_to_message_id=(message.message_id if i == 0 else None),
                     )
                 except Exception as plain_err:
                     await message.reply_text(
                         f"Failed to deliver response "
                         f"(Telegram error: {str(plain_err)[:150]}). "
                         f"Please try again.",
-                        reply_to_message_id=(
-                            message.message_id if i == 0 else None
-                        ),
+                        reply_to_message_id=(message.message_id if i == 0 else None),
                     )
 
         # Audit log
@@ -928,7 +979,7 @@ class MessageOrchestrator:
             await audit_logger.log_command(
                 user_id=user_id,
                 command="text_message",
-                args=[message_text[:100]],
+                args=[final_prompt[:100]],
                 success=success,
             )
 
@@ -1002,8 +1053,7 @@ class MessageOrchestrator:
                     content = content[:50000] + "\n... (truncated)"
                 caption = msg.caption or "Please review this file:"
                 prompt = (
-                    f"{caption}\n\n**File:** `{file_name}`\n\n"
-                    f"```\n{content}\n```"
+                    f"{caption}\n\n**File:** `{file_name}`\n\n" f"```\n{content}\n```"
                 )
             except UnicodeDecodeError:
                 await progress_msg.edit_text(
@@ -1109,9 +1159,7 @@ class MessageOrchestrator:
 
         try:
             photo = msg.photo[-1]
-            processed_image = await image_handler.process_image(
-                photo, msg.caption
-            )
+            processed_image = await image_handler.process_image(photo, msg.caption)
 
             claude_integration = context.bot_data.get("claude_integration")
             if not claude_integration:
