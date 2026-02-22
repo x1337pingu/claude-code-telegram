@@ -1,5 +1,7 @@
 """Command handlers for bot operations."""
 
+from typing import Any, Optional, Union
+
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -15,7 +17,13 @@ logger = structlog.get_logger()
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command."""
+    message = update.effective_message
+    if not message:
+        return
     user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
 
     welcome_message = (
         f"👋 Welcome to Claude Code Telegram Bot, {escape_html(user.first_name)}!\n\n"
@@ -52,12 +60,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await message.reply_text(
         welcome_message, parse_mode="HTML", reply_markup=reply_markup
     )
 
     # Log command
-    audit_logger: AuditLogger = context.bot_data.get("audit_logger")
+    audit_logger: Optional[AuditLogger] = context.bot_data.get("audit_logger")
     if audit_logger:
         await audit_logger.log_command(
             user_id=user.id, command="start", args=[], success=True
@@ -66,6 +74,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command."""
+    message = update.effective_message
+    if not message:
+        return
     help_text = (
         "🤖 <b>Claude Code Telegram Bot Help</b>\n\n"
         "<b>Navigation Commands:</b>\n"
@@ -110,11 +121,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Need more help? Contact your administrator."
     )
 
-    await update.message.reply_text(help_text, parse_mode="HTML")
+    await message.reply_text(help_text, parse_mode="HTML")
 
 
 async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /new command - start fresh session, clear context."""
+    message = update.effective_message
+    if not message:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
     settings: Settings = context.bot_data["settings"]
 
     # Get current directory (default to approved directory)
@@ -154,7 +170,7 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await message.reply_text(
         f"🆕 <b>New Claude Code Session</b>\n\n"
         f"📂 Working directory: <code>{relative_path}/</code>{cleared_info}\n\n"
         f"Context has been cleared. Send a message to start fresh, "
@@ -166,10 +182,20 @@ async def new_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /continue command with optional prompt."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
-    claude_integration: ClaudeIntegration = context.bot_data.get("claude_integration")
-    audit_logger: AuditLogger = context.bot_data.get("audit_logger")
+    claude_integration: Optional[ClaudeIntegration] = context.bot_data.get(
+        "claude_integration"
+    )
+    audit_logger: Optional[AuditLogger] = context.bot_data.get("audit_logger")
 
     # Parse optional prompt from command arguments
     # If no prompt provided, use a default to continue the conversation
@@ -182,7 +208,7 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     try:
         if not claude_integration:
-            await update.message.reply_text(
+            await message.reply_text(
                 "❌ <b>Claude Integration Not Available</b>\n\n"
                 "Claude integration is not properly configured."
             )
@@ -193,7 +219,7 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         if claude_session_id:
             # We have a session in context, continue it directly
-            status_msg = await update.message.reply_text(
+            status_msg = await message.reply_text(
                 f"🔄 <b>Continuing Session</b>\n\n"
                 f"Session ID: <code>{claude_session_id[:8]}...</code>\n"
                 f"Directory: <code>"
@@ -210,7 +236,7 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
             # Continue with the existing session
             # Use default prompt if none provided (Claude CLI requires a prompt)
-            claude_response = await claude_integration.run_command(
+            claude_response: Any = await claude_integration.run_command(
                 prompt=prompt or default_prompt,
                 working_directory=current_dir,
                 user_id=user_id,
@@ -218,7 +244,7 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
         else:
             # No session in context, try to find the most recent session
-            status_msg = await update.message.reply_text(
+            status_msg = await message.reply_text(
                 "🔍 <b>Looking for Recent Session</b>\n\n"
                 "Searching for your most recent session in this directory...",
                 parse_mode="HTML",
@@ -247,7 +273,7 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
 
             for msg in formatted_messages:
-                await update.message.reply_text(
+                await message.reply_text(
                     msg.text,
                     parse_mode=msg.parse_mode,
                     reply_markup=msg.reply_markup,
@@ -305,7 +331,7 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             pass
 
         # Send error response
-        await update.message.reply_text(
+        await message.reply_text(
             f"❌ <b>Error Continuing Session</b>\n\n"
             f"An error occurred while trying to continue your session:\n\n"
             f"<code>{error_msg}</code>\n\n"
@@ -328,9 +354,17 @@ async def continue_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /ls command."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
-    audit_logger: AuditLogger = context.bot_data.get("audit_logger")
+    audit_logger: Optional[AuditLogger] = context.bot_data.get("audit_logger")
 
     # Get current directory
     current_dir = context.user_data.get(
@@ -368,18 +402,22 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         # Format response
         relative_path = current_dir.relative_to(settings.approved_directory)
         if not items:
-            message = f"📂 <code>{relative_path}/</code>\n\n<i>(empty directory)</i>"
+            msg_text = (
+                f"📂 <code>{relative_path}/</code>\n\n<i>(empty directory)</i>"
+            )
         else:
-            message = f"📂 <code>{relative_path}/</code>\n\n"
+            msg_text = f"📂 <code>{relative_path}/</code>\n\n"
 
             # Limit items shown to prevent message being too long
             max_items = 50
             if len(items) > max_items:
                 shown_items = items[:max_items]
-                message += "\n".join(shown_items)
-                message += f"\n\n<i>... and {len(items) - max_items} more items</i>"
+                msg_text += "\n".join(shown_items)
+                msg_text += (
+                    f"\n\n<i>... and {len(items) - max_items} more items</i>"
+                )
             else:
-                message += "\n".join(items)
+                msg_text += "\n".join(items)
 
         # Add navigation buttons if not at root
         keyboard = []
@@ -402,8 +440,8 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
-        await update.message.reply_text(
-            message, parse_mode="HTML", reply_markup=reply_markup
+        await message.reply_text(
+            msg_text, parse_mode="HTML", reply_markup=reply_markup
         )
 
         # Log successful command
@@ -412,7 +450,7 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     except Exception as e:
         error_msg = f"❌ Error listing directory: {str(e)}"
-        await update.message.reply_text(error_msg)
+        await message.reply_text(error_msg)
 
         # Log failed command
         if audit_logger:
@@ -423,14 +461,24 @@ async def list_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /cd command."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
-    security_validator: SecurityValidator = context.bot_data.get("security_validator")
-    audit_logger: AuditLogger = context.bot_data.get("audit_logger")
+    security_validator: Optional[SecurityValidator] = context.bot_data.get(
+        "security_validator"
+    )
+    audit_logger: Optional[AuditLogger] = context.bot_data.get("audit_logger")
 
     # Parse arguments
     if not context.args:
-        await update.message.reply_text(
+        await message.reply_text(
             "<b>Usage:</b> <code>/cd &lt;directory&gt;</code>\n\n"
             "<b>Examples:</b>\n"
             "• <code>/cd myproject</code> - Enter subdirectory\n"
@@ -456,7 +504,7 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
 
             if not valid:
-                await update.message.reply_text(f"❌ <b>Access Denied</b>\n\n{error}")
+                await message.reply_text(f"❌ <b>Access Denied</b>\n\n{error}")
 
                 # Log security violation
                 if audit_logger:
@@ -479,16 +527,20 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 resolved_path = current_dir / target_path
                 resolved_path = resolved_path.resolve()
 
+        # At this point resolved_path is guaranteed non-None
+        # (either valid=True from validator, or set in the else branch)
+        assert resolved_path is not None
+
         # Check if directory exists and is actually a directory
         if not resolved_path.exists():
-            await update.message.reply_text(
+            await message.reply_text(
                 f"❌ <b>Directory Not Found</b>\n\n"
                 f"<code>{target_path}</code> does not exist."
             )
             return
 
         if not resolved_path.is_dir():
-            await update.message.reply_text(
+            await message.reply_text(
                 f"❌ <b>Not a Directory</b>\n\n"
                 f"<code>{target_path}</code> "
                 f"is not a directory."
@@ -499,7 +551,7 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         context.user_data["current_directory"] = resolved_path
 
         # Look up existing session for the new directory instead of clearing
-        claude_integration: ClaudeIntegration = context.bot_data.get(
+        claude_integration: Optional[ClaudeIntegration] = context.bot_data.get(
             "claude_integration"
         )
         resumed_session_info = ""
@@ -526,7 +578,7 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         # Send confirmation
         relative_path = resolved_path.relative_to(settings.approved_directory)
-        await update.message.reply_text(
+        await message.reply_text(
             f"✅ <b>Directory Changed</b>\n\n"
             f"📂 Current directory: <code>{relative_path}/</code>"
             f"{resumed_session_info}",
@@ -539,7 +591,7 @@ async def change_directory(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     except Exception as e:
         error_msg = f"❌ <b>Error changing directory</b>\n\n{str(e)}"
-        await update.message.reply_text(error_msg, parse_mode="HTML")
+        await message.reply_text(error_msg, parse_mode="HTML")
 
         # Log failed command
         if audit_logger:
@@ -552,6 +604,11 @@ async def print_working_directory(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """Handle /pwd command."""
+    message = update.effective_message
+    if not message:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
     settings: Settings = context.bot_data["settings"]
     current_dir = context.user_data.get(
         "current_directory", settings.approved_directory
@@ -569,7 +626,7 @@ async def print_working_directory(
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await message.reply_text(
         f"📍 <b>Current Directory</b>\n\n"
         f"Relative: <code>{relative_path}/</code>\n"
         f"Absolute: <code>{absolute_path}</code>",
@@ -580,6 +637,10 @@ async def print_working_directory(
 
 async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /projects command."""
+    message = update.effective_message
+    if not message:
+        return
+    assert context.bot_data is not None
     settings: Settings = context.bot_data["settings"]
 
     try:
@@ -590,7 +651,7 @@ async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 projects.append(item.name)
 
         if not projects:
-            await update.message.reply_text(
+            await message.reply_text(
                 "📁 <b>No Projects Found</b>\n\n"
                 "No subdirectories found in your approved directory.\n"
                 "Create some directories to organize your projects!"
@@ -625,7 +686,7 @@ async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
         project_list = "\n".join([f"• <code>{project}/</code>" for project in projects])
 
-        await update.message.reply_text(
+        await message.reply_text(
             f"📁 <b>Available Projects</b>\n\n"
             f"{project_list}\n\n"
             f"Click a project below to navigate to it:",
@@ -634,13 +695,21 @@ async def show_projects(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Error loading projects: {str(e)}")
+        await message.reply_text(f"❌ Error loading projects: {str(e)}")
         logger.error("Error in show_projects command", error=str(e))
 
 
 async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /status command."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
 
     # Get session info
@@ -678,7 +747,7 @@ async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Check if there's a resumable session from the database
     resumable_info = ""
     if not claude_session_id:
-        claude_integration: ClaudeIntegration = context.bot_data.get(
+        claude_integration: Optional[ClaudeIntegration] = context.bot_data.get(
             "claude_integration"
         )
         if claude_integration:
@@ -698,7 +767,7 @@ async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"📂 Directory: <code>{relative_path}/</code>",
         f"🤖 Claude Session: {'✅ Active' if claude_session_id else '❌ None'}",
         usage_info.rstrip(),
-        f"🕐 Last Update: {update.message.date.strftime('%H:%M:%S UTC')}",
+        f"🕐 Last Update: {message.date.strftime('%H:%M:%S UTC')}",
     ]
 
     if claude_session_id:
@@ -736,20 +805,25 @@ async def session_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await message.reply_text(
         "\n".join(status_lines), parse_mode="HTML", reply_markup=reply_markup
     )
 
 
 async def export_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /export command."""
+    message = update.effective_message
+    if not message:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
     features = context.bot_data.get("features")
 
     # Check if session export is available
     session_exporter = features.get_session_export() if features else None
 
     if not session_exporter:
-        await update.message.reply_text(
+        await message.reply_text(
             "📤 <b>Export Session</b>\n\n"
             "Session export functionality is not available.\n\n"
             "<b>Planned features:</b>\n"
@@ -764,7 +838,7 @@ async def export_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     claude_session_id = context.user_data.get("claude_session_id")
 
     if not claude_session_id:
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ <b>No Active Session</b>\n\n"
             "There's no active Claude session to export.\n\n"
             "<b>What you can do:</b>\n"
@@ -787,7 +861,7 @@ async def export_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await message.reply_text(
         "📤 <b>Export Session</b>\n\n"
         f"Ready to export session: <code>{claude_session_id[:8]}...</code>\n\n"
         "<b>Choose export format:</b>",
@@ -798,14 +872,22 @@ async def export_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /end command to terminate the current session."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
 
     # Check if there's an active session
     claude_session_id = context.user_data.get("claude_session_id")
 
     if not claude_session_id:
-        await update.message.reply_text(
+        await message.reply_text(
             "ℹ️ <b>No Active Session</b>\n\n"
             "There's no active Claude session to end.\n\n"
             "<b>What you can do:</b>\n"
@@ -841,7 +923,7 @@ async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
+    await message.reply_text(
         "✅ <b>Session Ended</b>\n\n"
         f"Your Claude session has been terminated.\n\n"
         f"<b>Current Status:</b>\n"
@@ -861,12 +943,20 @@ async def end_session(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /actions command to show quick actions."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
     features = context.bot_data.get("features")
 
     if not features or not features.is_enabled("quick_actions"):
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ <b>Quick Actions Disabled</b>\n\n"
             "Quick actions feature is not enabled.\n"
             "Contact your administrator to enable this feature."
@@ -881,7 +971,7 @@ async def quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         quick_action_manager = features.get_quick_actions()
         if not quick_action_manager:
-            await update.message.reply_text(
+            await message.reply_text(
                 "❌ <b>Quick Actions Unavailable</b>\n\n"
                 "Quick actions service is not available."
             )
@@ -893,7 +983,7 @@ async def quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
         if not actions:
-            await update.message.reply_text(
+            await message.reply_text(
                 "🤖 <b>No Actions Available</b>\n\n"
                 "No quick actions are available for the current context.\n\n"
                 "<b>Try:</b>\n"
@@ -907,7 +997,7 @@ async def quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         keyboard = quick_action_manager.create_inline_keyboard(actions, max_columns=2)
 
         relative_path = current_dir.relative_to(settings.approved_directory)
-        await update.message.reply_text(
+        await message.reply_text(
             f"⚡ <b>Quick Actions</b>\n\n"
             f"📂 Context: <code>{relative_path}/</code>\n\n"
             f"Select an action to execute:",
@@ -916,18 +1006,26 @@ async def quick_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
 
     except Exception as e:
-        await update.message.reply_text(f"❌ <b>Error Loading Actions</b>\n\n{str(e)}")
+        await message.reply_text(f"❌ <b>Error Loading Actions</b>\n\n{str(e)}")
         logger.error("Error in quick_actions command", error=str(e), user_id=user_id)
 
 
 async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /git command to show git repository information."""
-    user_id = update.effective_user.id
+    message = update.effective_message
+    if not message:
+        return
+    user = update.effective_user
+    if not user:
+        return
+    assert context.bot_data is not None
+    assert context.user_data is not None
+    user_id = user.id
     settings: Settings = context.bot_data["settings"]
     features = context.bot_data.get("features")
 
     if not features or not features.is_enabled("git"):
-        await update.message.reply_text(
+        await message.reply_text(
             "❌ <b>Git Integration Disabled</b>\n\n"
             "Git integration feature is not enabled.\n"
             "Contact your administrator to enable this feature."
@@ -942,7 +1040,7 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         git_integration = features.get_git_integration()
         if not git_integration:
-            await update.message.reply_text(
+            await message.reply_text(
                 "❌ <b>Git Integration Unavailable</b>\n\n"
                 "Git integration service is not available."
             )
@@ -950,7 +1048,7 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # Check if current directory is a git repository
         if not (current_dir / ".git").exists():
-            await update.message.reply_text(
+            await message.reply_text(
                 f"📂 <b>Not a Git Repository</b>\n\n"
                 f"Current directory <code>"
                 f"{current_dir.relative_to(settings.approved_directory)}"
@@ -1004,22 +1102,23 @@ async def git_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(
+        await message.reply_text(
             status_message, parse_mode="HTML", reply_markup=reply_markup
         )
 
     except Exception as e:
-        await update.message.reply_text(f"❌ <b>Git Error</b>\n\n{str(e)}")
+        await message.reply_text(f"❌ <b>Git Error</b>\n\n{str(e)}")
         logger.error("Error in git_command", error=str(e), user_id=user_id)
 
 
-def _format_file_size(size: int) -> str:
+def _format_file_size(size: Union[int, float]) -> str:
     """Format file size in human-readable format."""
+    fsize: float = float(size)
     for unit in ["B", "KB", "MB", "GB"]:
-        if size < 1024:
-            return f"{size:.1f}{unit}" if unit != "B" else f"{size}B"
-        size /= 1024
-    return f"{size:.1f}TB"
+        if fsize < 1024:
+            return f"{fsize:.1f}{unit}" if unit != "B" else f"{int(fsize)}B"
+        fsize /= 1024
+    return f"{fsize:.1f}TB"
 
 
 def _escape_markdown(text: str) -> str:

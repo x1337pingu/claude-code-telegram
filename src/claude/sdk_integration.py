@@ -12,7 +12,7 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import structlog
 from claude_agent_sdk import (
@@ -160,7 +160,7 @@ class ClaudeSDKManager:
         working_directory: Path,
         session_id: Optional[str] = None,
         continue_session: bool = False,
-        stream_callback: Optional[Callable[[StreamUpdate], None]] = None,
+        stream_callback: Optional[Callable[[StreamUpdate], Awaitable[None]]] = None,
         model: Optional[str] = None,
     ) -> ClaudeResponse:
         """Execute Claude Code command via SDK."""
@@ -179,7 +179,7 @@ class ClaudeSDKManager:
             options = ClaudeAgentOptions(
                 max_turns=self.config.claude_max_turns,
                 cwd=str(working_directory),
-                allowed_tools=self.config.claude_allowed_tools,
+                allowed_tools=self.config.claude_allowed_tools or [],
                 cli_path=cli_path,
                 model=model,
             )
@@ -201,9 +201,9 @@ class ClaudeSDKManager:
                 )
 
             # Collect messages
-            messages = []
+            messages: List[Message] = []
             cost = 0.0
-            tools_used = []
+            tools_used: List[Dict[str, Any]] = []
 
             # Execute with streaming and timeout
             await asyncio.wait_for(
@@ -341,7 +341,11 @@ class ClaudeSDKManager:
                 raise ClaudeProcessError(f"Unexpected error: {str(e)}")
 
     async def _execute_query_with_streaming(
-        self, prompt: str, options, messages: List, stream_callback: Optional[Callable]
+        self,
+        prompt: str,
+        options: ClaudeAgentOptions,
+        messages: List[Message],
+        stream_callback: Optional[Callable[[StreamUpdate], Awaitable[None]]],
     ) -> None:
         """Execute query with streaming and collect messages."""
         try:
@@ -378,7 +382,9 @@ class ClaudeSDKManager:
             raise
 
     async def _handle_stream_message(
-        self, message: Message, stream_callback: Callable[[StreamUpdate], None]
+        self,
+        message: Message,
+        stream_callback: Callable[[StreamUpdate], Awaitable[None]],
     ) -> None:
         """Handle streaming message from claude-agent-sdk."""
         try:
@@ -409,11 +415,11 @@ class ClaudeSDKManager:
                 # Note: This depends on the actual claude-agent-sdk message structure
 
             elif isinstance(message, UserMessage):
-                content = getattr(message, "content", "")
-                if content:
+                user_content = getattr(message, "content", "")
+                if user_content:
                     update = StreamUpdate(
                         type="user",
-                        content=content,
+                        content=str(user_content) if user_content else None,
                     )
                     await stream_callback(update)
 
@@ -471,7 +477,8 @@ class ClaudeSDKManager:
         try:
             with open(config_path) as f:
                 config_data = json.load(f)
-            return config_data.get("mcpServers", {})
+            result: Dict[str, Any] = config_data.get("mcpServers", {})
+            return result
         except (json.JSONDecodeError, OSError) as e:
             logger.error(
                 "Failed to load MCP config", path=str(config_path), error=str(e)

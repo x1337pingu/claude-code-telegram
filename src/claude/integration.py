@@ -66,7 +66,7 @@ class StreamUpdate:
 
     def is_error(self) -> bool:
         """Check if this update represents an error."""
-        return self.type == "error" or (
+        return self.type == "error" or bool(
             self.metadata and self.metadata.get("is_error", False)
         )
 
@@ -74,7 +74,11 @@ class StreamUpdate:
         """Extract tool names from tool calls."""
         if not self.tool_calls:
             return []
-        return [call.get("name") for call in self.tool_calls if call.get("name")]
+        return [
+            str(call.get("name"))
+            for call in self.tool_calls
+            if call.get("name")
+        ]
 
     def get_progress_percentage(self) -> Optional[int]:
         """Get progress percentage if available."""
@@ -255,10 +259,11 @@ class ClaudeProcessManager:
         self, process: Process, stream_callback: Optional[Callable]
     ) -> ClaudeResponse:
         """Memory-optimized output handling with bounded buffers."""
-        message_buffer = deque(maxlen=self.max_message_buffer)
+        message_buffer: deque[Dict[str, Any]] = deque(maxlen=self.max_message_buffer)
         result = None
-        parsing_errors = []
+        parsing_errors: List[str] = []
 
+        assert process.stdout is not None
         async for line in self._read_stream_bounded(process.stdout):
             try:
                 msg = json.loads(line)
@@ -305,6 +310,7 @@ class ClaudeProcessManager:
         return_code = await process.wait()
 
         if return_code != 0:
+            assert process.stderr is not None
             stderr = await process.stderr.read()
             error_msg = stderr.decode("utf-8", errors="replace")
             logger.error(
@@ -356,7 +362,7 @@ class ClaudeProcessManager:
 
         return self._parse_result(result, list(message_buffer))
 
-    async def _read_stream(self, stream) -> AsyncIterator[str]:
+    async def _read_stream(self, stream: asyncio.StreamReader) -> AsyncIterator[str]:
         """Read lines from stream."""
         while True:
             line = await stream.readline()
@@ -364,7 +370,9 @@ class ClaudeProcessManager:
                 break
             yield line.decode("utf-8", errors="replace").strip()
 
-    async def _read_stream_bounded(self, stream) -> AsyncIterator[str]:
+    async def _read_stream_bounded(
+        self, stream: asyncio.StreamReader
+    ) -> AsyncIterator[str]:
         """Read stream with memory bounds to prevent excessive memory usage."""
         buffer = b""
 

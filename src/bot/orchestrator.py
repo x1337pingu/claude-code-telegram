@@ -194,12 +194,20 @@ class MessageOrchestrator:
     ) -> None:
         """Brief welcome, no buttons."""
         user = update.effective_user
+        if not user:
+            return
+        message = update.message
+        if not message:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
         current_dir = context.user_data.get(
             "current_directory", self.settings.approved_directory
         )
 
         safe_name = escape_html(user.first_name)
-        await update.message.reply_text(
+        await message.reply_text(
             Personality.start(safe_name, str(current_dir)),
             parse_mode="HTML",
         )
@@ -208,15 +216,30 @@ class MessageOrchestrator:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Reset session, one-line confirmation."""
+        message = update.message
+        if not message:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
         context.user_data["claude_session_id"] = None
         context.user_data["session_started"] = True
 
-        await update.message.reply_text(Personality.reset())
+        await message.reply_text(Personality.reset())
 
     async def agentic_status(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Compact one-line status, no buttons."""
+        user = update.effective_user
+        if not user:
+            return
+        message = update.message
+        if not message:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
         current_dir = context.user_data.get(
             "current_directory", self.settings.approved_directory
         )
@@ -230,14 +253,14 @@ class MessageOrchestrator:
         rate_limiter = context.bot_data.get("rate_limiter")
         if rate_limiter:
             try:
-                user_status = rate_limiter.get_user_status(update.effective_user.id)
+                user_status = rate_limiter.get_user_status(user.id)
                 cost_usage = user_status.get("cost_usage", {})
                 current_cost = cost_usage.get("current", 0.0)
                 cost_str = f" · Cost: ${current_cost:.2f}"
             except Exception:
                 pass
 
-        await update.message.reply_text(
+        await message.reply_text(
             f"\U0001f4c2 {dir_display} \u00b7 Session: {session_status}{cost_str}"
         )
 
@@ -247,15 +270,23 @@ class MessageOrchestrator:
         """Handle /opus, /sonnet, /haiku <message> commands."""
         from .router import HAIKU, OPUS, SONNET
 
-        cmd = update.message.text.split()[0].lower().lstrip("/")
+        message = update.message
+        if not message:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
+        text: str = message.text or ""
+
+        cmd = text.split()[0].lower().lstrip("/")
         model_map = {"opus": OPUS, "sonnet": SONNET, "haiku": HAIKU}
         model = model_map.get(cmd, OPUS)
 
         # Extract the message after the command
-        parts = update.message.text.split(None, 1)
+        parts = text.split(None, 1)
         if len(parts) < 2 or not parts[1].strip():
             name = MODEL_NAMES.get(model, cmd)
-            await update.message.reply_text(
+            await message.reply_text(
                 f"Modele {name} selectionne. Ecris ton message apres la "
                 f"commande, ex: /{cmd} ta question ici"
             )
@@ -273,14 +304,23 @@ class MessageOrchestrator:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Direct Claude passthrough. Simple progress. No suggestions."""
-        user_id = update.effective_user.id
+        user = update.effective_user
+        if not user:
+            return
+        message = update.message
+        if not message:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
+        user_id = user.id
 
         # Clear any stale pending clarification
         context.user_data.pop("_pending_clarification", None)
 
         # Use text override if set by model override command, else original
         text_override = context.user_data.pop("_text_override", None)
-        message_text = text_override or update.message.text
+        message_text: str = text_override or message.text or ""
 
         # Check for model override (command or inline prefix)
         override_model = context.user_data.pop("_model_override", None)
@@ -314,12 +354,12 @@ class MessageOrchestrator:
         if rate_limiter:
             allowed, limit_message = await rate_limiter.check_rate_limit(user_id, 0.001)
             if not allowed:
-                await update.message.reply_text(Personality.bot_rate_limit())
+                await message.reply_text(Personality.bot_rate_limit())
                 return
 
         await self._execute_claude_and_respond(
-            chat_id=update.message.chat_id,
-            reply_to_message_id=update.message.message_id,
+            chat_id=message.chat_id,
+            reply_to_message_id=message.message_id,
             message_text=message_text,
             model=route.model,
             user_id=user_id,
@@ -343,6 +383,9 @@ class MessageOrchestrator:
 
         Shared by agentic_text and clarification callback.
         """
+        if context.user_data is None:
+            context.user_data = {}
+
         await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
         display_name = MODEL_NAMES.get(model, model)
@@ -481,8 +524,19 @@ class MessageOrchestrator:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Process file upload -> Claude, minimal chrome."""
-        user_id = update.effective_user.id
-        document = update.message.document
+        user = update.effective_user
+        if not user:
+            return
+        message = update.message
+        if not message:
+            return
+        document = message.document
+        if not document:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
+        user_id = user.id
 
         logger.info(
             "Agentic document upload",
@@ -495,18 +549,18 @@ class MessageOrchestrator:
         if security_validator:
             valid, error = security_validator.validate_filename(document.file_name)
             if not valid:
-                await update.message.reply_text(f"File rejected: {error}")
+                await message.reply_text(f"File rejected: {error}")
                 return
 
         # Size check
         max_size = 10 * 1024 * 1024
-        if document.file_size > max_size:
-            await update.message.reply_text(
+        if document.file_size and document.file_size > max_size:
+            await message.reply_text(
                 f"File too large ({document.file_size / 1024 / 1024:.1f}MB). Max: 10MB."
             )
             return
 
-        progress_msg = await update.message.reply_text(Personality.working())
+        progress_msg = await message.reply_text(Personality.working())
 
         # Try enhanced file handler, fall back to basic
         features = context.bot_data.get("features")
@@ -518,7 +572,7 @@ class MessageOrchestrator:
                 processed_file = await file_handler.handle_document_upload(
                     document,
                     user_id,
-                    update.message.caption or "Please review this file:",
+                    message.caption or "Please review this file:",
                 )
                 prompt = processed_file.prompt
             except Exception:
@@ -531,7 +585,7 @@ class MessageOrchestrator:
                 content = file_bytes.decode("utf-8")
                 if len(content) > 50000:
                     content = content[:50000] + "\n... (truncated)"
-                caption = update.message.caption or "Please review this file:"
+                caption = message.caption or "Please review this file:"
                 prompt = (
                     f"{caption}\n\n**File:** `{document.file_name}`\n\n"
                     f"```\n{content}\n```"
@@ -598,12 +652,12 @@ class MessageOrchestrator:
 
             await progress_msg.delete()
 
-            for i, message in enumerate(formatted_messages):
-                await update.message.reply_text(
-                    message.text,
-                    parse_mode=message.parse_mode,
+            for i, fmt_msg in enumerate(formatted_messages):
+                await message.reply_text(
+                    fmt_msg.text,
+                    parse_mode=fmt_msg.parse_mode,
                     reply_markup=None,
-                    reply_to_message_id=(update.message.message_id if i == 0 else None),
+                    reply_to_message_id=(message.message_id if i == 0 else None),
                 )
                 if i < len(formatted_messages) - 1:
                     await asyncio.sleep(0.5)
@@ -629,7 +683,18 @@ class MessageOrchestrator:
         import os
         import uuid as _uuid
 
-        user_id = update.effective_user.id
+        user = update.effective_user
+        if not user:
+            return
+        message = update.message
+        if not message:
+            return
+        if not message.photo:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
+        user_id = user.id
 
         # Photos always route to Opus (needs Read tool)
         photo_route = ModelRouter.route("", has_photo=True)
@@ -640,11 +705,11 @@ class MessageOrchestrator:
             route_reason=photo_route.reason,
         )
 
-        progress_msg = await update.message.reply_text(Personality.working())
+        progress_msg = await message.reply_text(Personality.working())
 
         try:
             # Download the highest-resolution photo
-            photo = update.message.photo[-1]
+            photo = message.photo[-1]
             file = await photo.get_file()
             image_bytes = await file.download_as_bytearray()
 
@@ -668,7 +733,7 @@ class MessageOrchestrator:
                 img_file.write(image_bytes)
 
             # Build prompt that tells Claude to read the image file
-            caption = update.message.caption or ""
+            caption = message.caption or ""
             if caption:
                 prompt = (
                     f'The user sent a photo with this message: "{caption}"\n\n'
@@ -732,12 +797,12 @@ class MessageOrchestrator:
 
             await progress_msg.delete()
 
-            for i, message in enumerate(formatted_messages):
-                await update.message.reply_text(
-                    message.text,
-                    parse_mode=message.parse_mode,
+            for i, fmt_msg in enumerate(formatted_messages):
+                await message.reply_text(
+                    fmt_msg.text,
+                    parse_mode=fmt_msg.parse_mode,
                     reply_markup=None,
-                    reply_to_message_id=(update.message.message_id if i == 0 else None),
+                    reply_to_message_id=(message.message_id if i == 0 else None),
                 )
                 if i < len(formatted_messages) - 1:
                     await asyncio.sleep(0.5)
@@ -800,6 +865,15 @@ class MessageOrchestrator:
         route: RouteResult,
     ) -> None:
         """Send inline keyboard asking user to pick a model."""
+        message = update.message
+        if not message:
+            return
+        user = update.effective_user
+        if not user:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
         # Determine the two candidate models from scores
         scores = route.scores
         sorted_models = sorted(scores.keys(), key=lambda m: scores[m], reverse=True)
@@ -822,11 +896,11 @@ class MessageOrchestrator:
         if len(buttons) < 2:
             # Fallback: just proceed with routed model
             await self._execute_claude_and_respond(
-                chat_id=update.message.chat_id,
-                reply_to_message_id=update.message.message_id,
+                chat_id=message.chat_id,
+                reply_to_message_id=message.message_id,
                 message_text=message_text,
                 model=route.model,
-                user_id=update.effective_user.id,
+                user_id=user.id,
                 context=context,
                 update=update,
                 route_display=route.display_name,
@@ -838,11 +912,11 @@ class MessageOrchestrator:
         # Store pending message for callback
         context.user_data["_pending_clarification"] = {
             "message_text": message_text,
-            "reply_to_message_id": update.message.message_id,
-            "chat_id": update.message.chat_id,
+            "reply_to_message_id": message.message_id,
+            "chat_id": message.chat_id,
         }
 
-        await update.message.reply_text(
+        await message.reply_text(
             Personality.clarify_model(message_text),
             reply_markup=keyboard,
         )
@@ -852,6 +926,16 @@ class MessageOrchestrator:
     ) -> None:
         """Process user's model choice from clarification keyboard."""
         query = update.callback_query
+        if not query:
+            return
+        if not query.data:
+            return
+        user = update.effective_user
+        if not user:
+            return
+        if context.user_data is None:
+            context.user_data = {}
+
         await query.answer()
 
         # Extract chosen model from callback data
@@ -868,7 +952,7 @@ class MessageOrchestrator:
         await query.edit_message_text(Personality.clarify_acknowledged(chosen_name))
 
         # Rate limit check
-        user_id = update.effective_user.id
+        user_id = user.id
         rate_limiter = context.bot_data.get("rate_limiter")
         if rate_limiter:
             allowed, limit_message = await rate_limiter.check_rate_limit(user_id, 0.001)
@@ -895,6 +979,11 @@ class MessageOrchestrator:
     ) -> None:
         """Handle cd: callbacks (pattern-filtered by registration)."""
         query = update.callback_query
+        if not query:
+            return
+        if not query.data:
+            return
+
         await query.answer()
 
         data = query.data

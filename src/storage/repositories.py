@@ -8,7 +8,7 @@ Features:
 
 import json
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import structlog
 
@@ -66,7 +66,7 @@ class UserRepository:
             )
             return user
 
-    async def update_user(self, user: UserModel):
+    async def update_user(self, user: UserModel) -> None:
         """Update user data."""
         async with self.db.get_connection() as conn:
             await conn.execute(
@@ -99,7 +99,7 @@ class UserRepository:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
 
-    async def set_user_allowed(self, user_id: int, allowed: bool):
+    async def set_user_allowed(self, user_id: int, allowed: bool) -> None:
         """Set user allowed status."""
         async with self.db.get_connection() as conn:
             await conn.execute(
@@ -160,7 +160,7 @@ class SessionRepository:
             )
             return session
 
-    async def update_session(self, session: SessionModel):
+    async def update_session(self, session: SessionModel) -> None:
         """Update session data."""
         async with self.db.get_connection() as conn:
             await conn.execute(
@@ -267,7 +267,7 @@ class MessageRepository:
                 ),
             )
             await conn.commit()
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
 
     async def get_session_messages(
         self, session_id: str, limit: int = 50
@@ -353,7 +353,7 @@ class ToolUsageRepository:
                 ),
             )
             await conn.commit()
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
 
     async def get_session_tool_usage(self, session_id: str) -> List[ToolUsageModel]:
         """Get tool usage for session."""
@@ -384,7 +384,7 @@ class ToolUsageRepository:
             rows = await cursor.fetchall()
             return [ToolUsageModel.from_row(row) for row in rows]
 
-    async def get_tool_stats(self) -> List[Dict[str, any]]:
+    async def get_tool_stats(self) -> List[Dict[str, Any]]:
         """Get tool usage statistics."""
         async with self.db.get_connection() as conn:
             cursor = await conn.execute(
@@ -440,7 +440,7 @@ class AuditLogRepository:
                 ),
             )
             await conn.commit()
-            return cursor.lastrowid
+            return cursor.lastrowid or 0
 
     async def get_user_audit_log(
         self, user_id: int, limit: int = 100
@@ -483,7 +483,9 @@ class CostTrackingRepository:
         """Initialize repository."""
         self.db = db_manager
 
-    async def update_daily_cost(self, user_id: int, cost: float, date: str = None):
+    async def update_daily_cost(
+        self, user_id: int, cost: float, date: Optional[str] = None
+    ) -> None:
         """Update daily cost for user."""
         if not date:
             date = datetime.utcnow().strftime("%Y-%m-%d")
@@ -523,7 +525,7 @@ class CostTrackingRepository:
             rows = await cursor.fetchall()
             return [CostTrackingModel.from_row(row) for row in rows]
 
-    async def get_total_costs(self, days: int = 30) -> List[Dict[str, any]]:
+    async def get_total_costs(self, days: int = 30) -> List[Dict[str, Any]]:
         """Get total costs by day."""
         async with self.db.get_connection() as conn:
             cursor = await conn.execute(
@@ -555,7 +557,7 @@ class AnalyticsRepository:
         """Initialize repository."""
         self.db = db_manager
 
-    async def get_user_stats(self, user_id: int) -> Dict[str, any]:
+    async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
         """Get user statistics."""
         async with self.db.get_connection() as conn:
             # User summary
@@ -577,7 +579,8 @@ class AnalyticsRepository:
                 (user_id,),
             )
 
-            summary = dict(await cursor.fetchone())
+            row = await cursor.fetchone()
+            summary = dict(row) if row else {}
 
             # Daily usage (last 30 days)
             cursor = await conn.execute(
@@ -626,7 +629,7 @@ class AnalyticsRepository:
                 "top_tools": top_tools,
             }
 
-    async def get_system_stats(self) -> Dict[str, any]:
+    async def get_system_stats(self) -> Dict[str, Any]:
         """Get system-wide statistics."""
         async with self.db.get_connection() as conn:
             # Overall stats
@@ -645,7 +648,8 @@ class AnalyticsRepository:
             """
             )
 
-            overall = dict(await cursor.fetchone())
+            row = await cursor.fetchone()
+            overall = dict(row) if row else {}
 
             # Active users (last 7 days)
             cursor = await conn.execute(
@@ -659,7 +663,8 @@ class AnalyticsRepository:
             """
             )
 
-            active_users = (await cursor.fetchone())[0]
+            active_row = await cursor.fetchone()
+            active_users = active_row[0] if active_row else 0
             overall["active_users_7d"] = active_users
 
             # Top users by cost

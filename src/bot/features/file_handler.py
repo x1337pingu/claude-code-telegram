@@ -15,7 +15,7 @@ import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from telegram import Document
 
@@ -29,7 +29,7 @@ class ProcessedFile:
 
     type: str
     prompt: str
-    metadata: Dict[str, any]
+    metadata: Dict[str, Any]
 
 
 @dataclass
@@ -331,11 +331,12 @@ class FileHandler:
 
     def _format_size(self, size: int) -> str:
         """Format file size for display"""
+        fsize = float(size)
         for unit in ["B", "KB", "MB", "GB"]:
-            if size < 1024.0:
-                return f"{size:.1f}{unit}"
-            size /= 1024.0
-        return f"{size:.1f}TB"
+            if fsize < 1024.0:
+                return f"{fsize:.1f}{unit}"
+            fsize /= 1024.0
+        return f"{fsize:.1f}TB"
 
     def _find_code_files(self, directory: Path) -> List[Path]:
         """Find all code files in directory"""
@@ -391,8 +392,8 @@ class FileHandler:
         )
 
         # Language detection
-        language_stats = defaultdict(int)
-        file_extensions = defaultdict(int)
+        language_stats: defaultdict[str, int] = defaultdict(int)
+        file_extensions: defaultdict[str, int] = defaultdict(int)
 
         for file_path in directory.rglob("*"):
             if file_path.is_file():
@@ -416,7 +417,7 @@ class FileHandler:
         analysis.todo_count = await self._find_todos(directory)
 
         # Check for tests
-        test_files = self._find_test_files(directory)
+        test_files: List[Path] = self._find_test_files(directory)
         analysis.test_coverage = len(test_files) > 0
 
         return analysis
@@ -504,7 +505,7 @@ class FileHandler:
 
     def _find_test_files(self, directory: Path) -> List[Path]:
         """Find test files in the codebase"""
-        test_files = []
+        test_files: List[Path] = []
 
         # Common test patterns
         test_patterns = [

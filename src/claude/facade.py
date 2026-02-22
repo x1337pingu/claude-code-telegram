@@ -4,7 +4,7 @@ Provides simple interface for bot handlers.
 """
 
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import structlog
 
@@ -13,6 +13,7 @@ from .exceptions import ClaudeToolValidationError
 from .integration import ClaudeProcessManager, ClaudeResponse, StreamUpdate
 from .monitor import ToolMonitor
 from .sdk_integration import ClaudeSDKManager
+from .sdk_integration import ClaudeResponse as SDKClaudeResponse
 from .session import ClaudeSession, SessionManager
 
 logger = structlog.get_logger()
@@ -33,13 +34,14 @@ class ClaudeIntegration:
         self.config = config
 
         # Initialize both managers for fallback capability
-        self.sdk_manager = (
+        self.sdk_manager: Optional[ClaudeSDKManager] = (
             sdk_manager or ClaudeSDKManager(config) if config.use_sdk else None
         )
         self.process_manager = process_manager or ClaudeProcessManager(config)
 
         # Use SDK by default if configured
-        if config.use_sdk:
+        self.manager: Union[ClaudeSDKManager, ClaudeProcessManager]
+        if config.use_sdk and self.sdk_manager:
             self.manager = self.sdk_manager
         else:
             self.manager = self.process_manager
@@ -54,10 +56,15 @@ class ClaudeIntegration:
         working_directory: Path,
         user_id: int,
         session_id: Optional[str] = None,
-        on_stream: Optional[Callable[[StreamUpdate], None]] = None,
+        on_stream: Optional[Callable[[StreamUpdate], Any]] = None,
         model: Optional[str] = None,
-    ) -> ClaudeResponse:
+    ) -> Union[ClaudeResponse, SDKClaudeResponse]:
         """Run Claude Code command with full integration."""
+        if self.session_manager is None:
+            raise RuntimeError("SessionManager not initialized")
+        if self.tool_monitor is None:
+            raise RuntimeError("ToolMonitor not initialized")
+
         logger.info(
             "Running Claude command",
             user_id=user_id,
@@ -88,24 +95,25 @@ class ClaudeIntegration:
 
         # Track streaming updates and validate tool calls
         tools_validated = True
-        validation_errors = []
-        blocked_tools = set()
+        validation_errors: List[str] = []
+        blocked_tools: set[str] = set()
+        tool_monitor = self.tool_monitor
 
-        async def stream_handler(update: StreamUpdate):
+        async def stream_handler(update: StreamUpdate) -> None:
             nonlocal tools_validated
 
             # Validate tool calls
             if update.tool_calls:
                 for tool_call in update.tool_calls:
                     tool_name = tool_call["name"]
-                    valid, error = await self.tool_monitor.validate_tool_call(
+                    valid, error = await tool_monitor.validate_tool_call(
                         tool_name,
                         tool_call.get("input", {}),
                         working_directory,
                         user_id,
                     )
 
-                    if not valid:
+                    if not valid and error:
                         tools_validated = False
                         validation_errors.append(error)
 
@@ -205,15 +213,17 @@ class ClaudeIntegration:
                 response.error_type = "tool_validation_failed"
 
                 # Extract blocked tool names for user feedback
-                blocked_tools = []
+                blocked_tool_names: List[str] = []
                 for error in validation_errors:
                     if "Tool not allowed:" in error:
                         tool_name = error.split("Tool not allowed: ")[1]
-                        blocked_tools.append(tool_name)
+                        blocked_tool_names.append(tool_name)
 
                 # Create user-friendly error message
-                if blocked_tools:
-                    tool_list = ", ".join(f"`{tool}`" for tool in blocked_tools)
+                if blocked_tool_names:
+                    tool_list = ", ".join(
+                        f"`{tool}`" for tool in blocked_tool_names
+                    )
                     response.content = (
                         f"🚫 **Tool Access Blocked**\n\n"
                         f"Claude tried to use tools not allowed:\n"
@@ -230,7 +240,8 @@ class ClaudeIntegration:
                             f"`{t}`"
                             for t in (
                                 self.config.claude_allowed_tools
-                                or []
+                                if self.config.claude_allowed_tools
+                                else []
                             )
                         )
                     )
@@ -282,9 +293,9 @@ class ClaudeIntegration:
         working_directory: Path,
         session_id: Optional[str] = None,
         continue_session: bool = False,
-        stream_callback: Optional[Callable] = None,
+        stream_callback: Optional[Callable[..., Any]] = None,
         model: Optional[str] = None,
-    ) -> ClaudeResponse:
+    ) -> Union[ClaudeResponse, SDKClaudeResponse]:
         """Execute command with SDK->subprocess fallback on JSON decode errors."""
         # Try SDK first if configured
         if self.config.use_sdk and self.sdk_manager:
@@ -325,16 +336,18 @@ class ClaudeIntegration:
                         logger.info("Executing with subprocess fallback")
                         # Don't pass SDK session_id to subprocess - start fresh
                         # SDK and subprocess have separate session management
-                        response = await self.process_manager.execute_command(
-                            prompt=prompt,
-                            working_directory=working_directory,
-                            session_id=None,  # Start new session in subprocess
-                            continue_session=False,  # Fresh start
-                            stream_callback=stream_callback,
-                            model=model,
+                        fallback_response = (
+                            await self.process_manager.execute_command(
+                                prompt=prompt,
+                                working_directory=working_directory,
+                                session_id=None,  # Start new session in subprocess
+                                continue_session=False,  # Fresh start
+                                stream_callback=stream_callback,
+                                model=model,
+                            )
                         )
                         logger.info("Subprocess fallback succeeded")
-                        return response
+                        return fallback_response
 
                     except Exception as fallback_error:
                         logger.error(
@@ -373,6 +386,8 @@ class ClaudeIntegration:
         Returns the session if one exists that is non-expired and has a real
         (non-temporary) session ID from Claude. Returns None otherwise.
         """
+        if self.session_manager is None:
+            return None
         sessions = await self.session_manager._get_user_sessions(user_id)
 
         matching_sessions = [
@@ -393,9 +408,12 @@ class ClaudeIntegration:
         user_id: int,
         working_directory: Path,
         prompt: Optional[str] = None,
-        on_stream: Optional[Callable[[StreamUpdate], None]] = None,
-    ) -> Optional[ClaudeResponse]:
+        on_stream: Optional[Callable[[StreamUpdate], Any]] = None,
+    ) -> Optional[Union[ClaudeResponse, SDKClaudeResponse]]:
         """Continue the most recent session."""
+        if self.session_manager is None:
+            raise RuntimeError("SessionManager not initialized")
+
         logger.info(
             "Continuing session",
             user_id=user_id,
@@ -433,10 +451,14 @@ class ClaudeIntegration:
 
     async def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get session information."""
+        if self.session_manager is None:
+            raise RuntimeError("SessionManager not initialized")
         return await self.session_manager.get_session_info(session_id)
 
     async def get_user_sessions(self, user_id: int) -> List[Dict[str, Any]]:
         """Get all sessions for a user."""
+        if self.session_manager is None:
+            raise RuntimeError("SessionManager not initialized")
         sessions = await self.session_manager._get_user_sessions(user_id)
         return [
             {
@@ -454,14 +476,22 @@ class ClaudeIntegration:
 
     async def cleanup_expired_sessions(self) -> int:
         """Clean up expired sessions."""
+        if self.session_manager is None:
+            raise RuntimeError("SessionManager not initialized")
         return await self.session_manager.cleanup_expired_sessions()
 
     async def get_tool_stats(self) -> Dict[str, Any]:
         """Get tool usage statistics."""
+        if self.tool_monitor is None:
+            raise RuntimeError("ToolMonitor not initialized")
         return self.tool_monitor.get_tool_stats()
 
     async def get_user_summary(self, user_id: int) -> Dict[str, Any]:
         """Get comprehensive user summary."""
+        if self.session_manager is None:
+            raise RuntimeError("SessionManager not initialized")
+        if self.tool_monitor is None:
+            raise RuntimeError("ToolMonitor not initialized")
         session_summary = await self.session_manager.get_user_session_summary(user_id)
         tool_usage = self.tool_monitor.get_user_tool_usage(user_id)
 

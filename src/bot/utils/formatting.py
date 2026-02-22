@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -215,11 +215,13 @@ class ResponseFormatter:
 
         return chunks
 
-    def _identify_sections(self, text: str) -> List[dict]:
+    def _identify_sections(self, text: str) -> List[Dict[str, Any]]:
         """Identify different content types in the text."""
-        sections = []
+        sections: List[Dict[str, Any]] = []
         lines = text.split("\n")
-        current_section = {"type": "text", "content": "", "start_line": 0}
+        current_section: Dict[str, Any] = {
+            "type": "text", "content": "", "start_line": 0
+        }
         in_code_block = False
 
         for i, line in enumerate(lines):
@@ -460,23 +462,24 @@ class ResponseFormatter:
         This method now just truncates oversized code blocks.
         """
 
-        def _truncate_code(m: re.Match) -> str:  # type: ignore[type-arg]
-            full = m.group(0)
+        def _truncate_code(m: re.Match[str]) -> str:
+            full: str = m.group(0)
             if len(full) > self.max_code_block_length:
                 # Re-extract and truncate the inner content
-                inner = m.group(1)
+                inner: str = m.group(1)
                 truncated = inner[: self.max_code_block_length - 80]
                 return (
                     f"<pre><code>{escape_html(truncated)}\n... (truncated)</code></pre>"
                 )
             return full
 
-        return re.sub(
+        result: str = re.sub(
             r"<pre><code[^>]*>(.*?)</code></pre>",
             _truncate_code,
             text,
             flags=re.DOTALL,
         )
+        return result
 
     def _split_message(self, text: str) -> List[FormattedMessage]:
         """Split long messages while preserving formatting."""

@@ -60,8 +60,8 @@ class ClaudeCodeBot:
         # Initialize feature registry
         self.feature_registry = FeatureRegistry(
             config=self.settings,
-            storage=self.deps.get("storage"),
-            security=self.deps.get("security"),
+            storage=self.deps["storage"],
+            security=self.deps["security_validator"],
         )
 
         # Add feature registry to dependencies
@@ -83,12 +83,14 @@ class ClaudeCodeBot:
 
     async def _set_bot_commands(self) -> None:
         """Set bot command menu via orchestrator."""
+        assert self.app is not None
         commands = await self.orchestrator.get_bot_commands()
         await self.app.bot.set_my_commands(commands)
         logger.info("Bot commands set", commands=[cmd.command for cmd in commands])
 
     def _register_handlers(self) -> None:
         """Register handlers via orchestrator (mode-aware)."""
+        assert self.app is not None
         self.orchestrator.register_handlers(self.app)
 
     def _add_middleware(self) -> None:
@@ -99,6 +101,7 @@ class ClaudeCodeBot:
         Middleware raises ApplicationHandlerStop to block unauthorized updates
         from reaching any handler group.
         """
+        assert self.app is not None
         from .middleware.auth import auth_middleware
         from .middleware.rate_limit import rate_limit_middleware
         from .middleware.security import security_middleware
@@ -126,19 +129,21 @@ class ClaudeCodeBot:
 
         logger.info("Middleware added to bot (TypeHandler + ApplicationHandlerStop)")
 
-    def _create_middleware_handler(self, middleware_func: Callable) -> Callable:
+    def _create_middleware_handler(
+        self, middleware_func: Callable[..., Any]
+    ) -> Callable[..., Any]:
         """Create middleware handler that injects dependencies."""
 
         async def middleware_wrapper(
             update: Update, context: ContextTypes.DEFAULT_TYPE
-        ):
+        ) -> Any:
             # Inject dependencies into context
             for key, value in self.deps.items():
                 context.bot_data[key] = value
             context.bot_data["settings"] = self.settings
 
             # Dummy handler (middleware handles everything)
-            async def dummy_handler(event, data):
+            async def dummy_handler(event: Any, data: Any) -> None:
                 return None
 
             # Call middleware with Telegram-style parameters
@@ -160,10 +165,11 @@ class ClaudeCodeBot:
 
         try:
             self.is_running = True
+            assert self.app is not None
 
             if self.settings.webhook_url:
-                # Webhook mode
-                await self.app.run_webhook(
+                # Webhook mode (run_webhook is a blocking call, not a coroutine)
+                self.app.run_webhook(
                     listen="0.0.0.0",
                     port=self.settings.webhook_port,
                     url_path=self.settings.webhook_path,
@@ -175,6 +181,7 @@ class ClaudeCodeBot:
                 # Polling mode - initialize and start polling manually
                 await self.app.initialize()
                 await self.app.start()
+                assert self.app.updater is not None
                 await self.app.updater.start_polling(
                     allowed_updates=Update.ALL_TYPES,
                     drop_pending_updates=True,
@@ -206,7 +213,7 @@ class ClaudeCodeBot:
 
             if self.app:
                 # Stop the updater if it's running
-                if self.app.updater.running:
+                if self.app.updater and self.app.updater.running:
                     await self.app.updater.stop()
 
                 # Stop the application
@@ -219,16 +226,20 @@ class ClaudeCodeBot:
             raise ClaudeCodeTelegramError(f"Failed to stop bot: {str(e)}") from e
 
     async def _error_handler(
-        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+        self, update: object, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """Handle errors globally."""
         error = context.error
+        # Cast update for Telegram-specific attributes
+        tg_update = update if isinstance(update, Update) else None
         logger.error(
             "Global error handler triggered",
             error=str(error),
             update_type=type(update).__name__ if update else None,
             user_id=(
-                update.effective_user.id if update and update.effective_user else None
+                tg_update.effective_user.id
+                if tg_update and tg_update.effective_user
+                else None
             ),
         )
 
@@ -241,7 +252,7 @@ class ClaudeCodeBot:
         )
         from .personality import Personality
 
-        error_messages = {
+        error_messages: Dict[type, str] = {
             AuthenticationError: Personality.auth_required(),
             SecurityError: Personality.security_blocked(),
             RateLimitExceeded: Personality.bot_rate_limit(),
@@ -255,9 +266,9 @@ class ClaudeCodeBot:
         )
 
         # Try to notify user
-        if update and update.effective_message:
+        if tg_update and tg_update.effective_message:
             try:
-                await update.effective_message.reply_text(user_message)
+                await tg_update.effective_message.reply_text(user_message)
             except Exception:
                 logger.exception("Failed to send error message to user")
 
@@ -265,10 +276,10 @@ class ClaudeCodeBot:
         from ..security.audit import AuditLogger
 
         audit_logger: Optional[AuditLogger] = context.bot_data.get("audit_logger")
-        if audit_logger and update and update.effective_user:
+        if audit_logger and tg_update and tg_update.effective_user:
             try:
                 await audit_logger.log_security_violation(
-                    user_id=update.effective_user.id,
+                    user_id=tg_update.effective_user.id,
                     violation_type="system_error",
                     details=f"Error type: {error_type.__name__}, Message: {str(error)}",
                     severity="medium",
