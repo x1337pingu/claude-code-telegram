@@ -8,6 +8,7 @@ Features:
 """
 
 import hashlib
+import hmac
 import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -209,8 +210,8 @@ class TokenAuthProvider(AuthProvider):
         return hashlib.sha256(f"{token}{self.secret}".encode()).hexdigest()
 
     def _verify_token(self, token: str, stored_hash: str) -> bool:
-        """Verify token against stored hash."""
-        return self._hash_token(token) == stored_hash
+        """Verify token against stored hash (constant-time comparison)."""
+        return hmac.compare_digest(self._hash_token(token), stored_hash)
 
 
 class AuthenticationManager:

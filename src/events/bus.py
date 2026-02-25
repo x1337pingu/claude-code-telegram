@@ -98,15 +98,12 @@ class EventBus:
 
     async def _process_events(self) -> None:
         """Main event processing loop."""
-        while self._running:
-            try:
-                event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
-                break
-
-            await self._dispatch(event)
+        try:
+            while True:
+                event = await self._queue.get()
+                await self._dispatch(event)
+        except asyncio.CancelledError:
+            pass
 
     async def _dispatch(self, event: Event) -> None:
         """Dispatch event to all matching handlers concurrently."""

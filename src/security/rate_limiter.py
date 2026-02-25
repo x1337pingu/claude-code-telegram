@@ -114,8 +114,8 @@ class RateLimiter:
                 )
                 return False, cost_message
 
-            # If both checks pass, consume resources
-            self._consume_request_tokens(user_id, tokens)
+            # If both checks pass, track cost
+            # (request tokens already consumed by _check_request_rate)
             self._track_cost(user_id, cost)
 
             logger.debug(

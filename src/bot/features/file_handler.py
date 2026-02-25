@@ -161,8 +161,9 @@ class FileHandler:
         # Get file
         file = await document.get_file()
 
-        # Create temp file path
-        file_name = document.file_name or f"file_{uuid.uuid4()}"
+        # Create temp file path (sanitize: strip directory components)
+        raw_name = document.file_name or f"file_{uuid.uuid4()}"
+        file_name = Path(raw_name).name
         file_path = self.temp_dir / file_name
 
         # Download to path
@@ -225,18 +226,20 @@ class FileHandler:
 
             elif archive_path.suffix in {".tar", ".gz", ".bz2", ".xz"}:
                 with tarfile.open(archive_path) as tf:
-                    # Security checks
-                    total_size = sum(member.size for member in tf.getmembers())
-                    if total_size > 100 * 1024 * 1024:  # 100MB limit
-                        raise ValueError("Archive too large")
+                    # Security checks (stream to avoid OOM on crafted archives)
+                    total_size = 0
+                    member_count = 0
+                    for member in tf:
+                        total_size += member.size
+                        member_count += 1
+                        if total_size > 100 * 1024 * 1024:  # 100MB limit
+                            raise ValueError("Archive too large")
+                        if member_count > 10000:
+                            raise ValueError("Archive has too many entries")
 
-                    # Extract with security checks
-                    for member in tf.getmembers():
-                        # Prevent path traversal
-                        if member.name.startswith("/") or ".." in member.name:
-                            continue
-
-                        tf.extract(member, extract_dir)
+                    # Safe extraction: filter='data' blocks symlinks,
+                    # hardlinks, device nodes, and paths outside dest
+                    tf.extractall(extract_dir, filter="data")
 
             # Analyze contents
             file_tree = self._build_file_tree(extract_dir)

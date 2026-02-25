@@ -4,9 +4,16 @@ import hashlib
 import hmac
 
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from src.api.server import create_api_app
 from src.events.bus import EventBus
+
+
+def _to_secret(val: object) -> "SecretStr | None":
+    if val is None:
+        return None
+    return SecretStr(str(val))
 
 
 def make_settings(**overrides):  # type: ignore[no-untyped-def]
@@ -15,9 +22,11 @@ def make_settings(**overrides):  # type: ignore[no-untyped-def]
 
     settings = MagicMock()
     settings.development_mode = True
-    settings.github_webhook_secret = overrides.get("github_webhook_secret", "gh-secret")
-    settings.webhook_api_secret = overrides.get(
-        "webhook_api_secret", "default-api-secret"
+    settings.github_webhook_secret = _to_secret(
+        overrides.get("github_webhook_secret", "gh-secret")
+    )
+    settings.webhook_api_secret = _to_secret(
+        overrides.get("webhook_api_secret", "default-api-secret")
     )
     settings.api_server_port = 8080
     settings.debug = False
